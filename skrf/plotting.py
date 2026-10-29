@@ -325,9 +325,66 @@ def smith(smithR: Number = 1, chart_type: str = 'z', draw_labels: bool = False,
     """
     from matplotlib.patches import Circle
 
-    # contour holds matplotlib instances of: paths.Circle, and lines.Line2D, which
-    # are the contours on the smith chart
-    contour = []
+    colors = dict(superlight=dict(ec='whitesmoke', fc='none'), verylight=dict(ec='lightgrey', fc='none'),
+                  light=dict(ec='grey', fc='none'), heavy=dict(ec='black', fc='none'))
+    circles, labels = _smith_grid(smithR, chart_type, draw_labels, ref_imm, draw_vswr)
+
+    # contour holds matplotlib instances of paths.Circle, which are the contours
+    # on the smith chart
+    contour = [Circle(center, radius, **colors[weight]) for center, radius, weight in circles]
+    y_flip_sign = -1 if chart_type.startswith('y') else 1
+
+    # clipping circle
+    clipc = Circle( [0,0], smithR, ec='k',fc='None',visible=True)
+    ax.add_patch( clipc)
+
+    #draw x and y axis
+    ax.axhline(0, color='k', lw=.1, clip_path=clipc)
+    ax.axvline(1*y_flip_sign, color='k', clip_path=clipc)
+    ax.grid(0)
+    # Set axis limits by plotting white points so zooming works properly
+    ax.plot(smithR*np.array([-1.1, 1.1]), smithR*np.array([-1.1, 1.1]), 'w.', markersize = 0)
+    ax.axis('image') # Combination of 'equal' and 'tight'
+
+
+    if not border:
+        ax.yaxis.set_ticks([])
+        ax.xaxis.set_ticks([])
+        for spine in ax.spines.values():
+            spine.set_color('none')
+
+
+    if draw_labels:
+        #Clear axis
+        ax.yaxis.set_ticks([])
+        ax.xaxis.set_ticks([])
+        for spine in ax.spines.values():
+            spine.set_color('none')
+
+        # Make annotations only if the radius is 1
+        if smithR == 1:
+            #Make room for annotation
+            ax.plot(np.array([-1.25, 1.25]), np.array([-1.1, 1.1]), 'w.', markersize = 0)
+            ax.axis('image')
+
+            for text, x, y, ha, va, kw in labels:
+                ax.annotate(text, xy=(x, y), xytext=(x, y), ha=ha, va=va, **kw)
+
+    # loop though contours and draw them on the given axes
+    for currentContour in contour:
+        cc=ax.add_patch(currentContour)
+        cc.set_clip_path(clipc)
+
+
+def _smith_grid(smithR: Number = 1, chart_type: str = 'z', draw_labels: bool = False,
+                ref_imm: float = 1.0, draw_vswr: list | bool | None = None) -> tuple[list, list]:
+    """
+    Smith chart grid drawn by :func:`smith` and :func:`_plotly_smith`.
+
+    Returns the circles as ``(center, radius, weight)`` in drawing order, where weight is
+    'superlight', 'verylight', 'light' or 'heavy', and the labels as ``(text, x, y, ha, va, kwargs)``.
+    """
+    circles = []
 
     # these are hard-coded on purpose,as they should always be present
     rHeavyList = [0,1]
@@ -365,141 +422,96 @@ def smith(smithR: Number = 1, chart_type: str = 'z', draw_labels: bool = False,
     both_charts = chart_type in ('zy', 'yz')
 
 
-    # loops through Verylight, Light and Heavy lists and draws circles using patches
+    # loops through Verylight, Light and Heavy lists and lists circles
     # for analysis of this see R.M. Weikles Microwave II notes (from uva)
-
-    superLightColor = dict(ec='whitesmoke', fc='none')
-    veryLightColor = dict(ec='lightgrey', fc='none')
-    lightColor = dict(ec='grey', fc='none')
-    heavyColor = dict(ec='black', fc='none')
 
     # vswr circles verylight
     for vswr in vswrVeryLightList:
         radius = (vswr-1.0) / (vswr+1.0)
-        contour.append( Circle((0, 0), radius, **veryLightColor))
+        circles.append(((0, 0), radius, 'verylight'))
 
     # impedance/admittance circles
     for r in rLightList:
         center = (r/(1.+r)*y_flip_sign,0 )
         radius = 1./(1+r)
         if both_charts:
-            contour.insert(0, Circle((-center[0], center[1]), radius, **superLightColor))
-        contour.append(Circle(center, radius, **lightColor))
+            circles.insert(0, ((-center[0], center[1]), radius, 'superlight'))
+        circles.append((center, radius, 'light'))
     for x in xLightList:
         center = (1*y_flip_sign,1./x)
         radius = 1./x
         if both_charts:
-            contour.insert(0, Circle( (-center[0], center[1]), radius, **superLightColor))
-        contour.append(Circle(center, radius, **lightColor))
+            circles.insert(0, ((-center[0], center[1]), radius, 'superlight'))
+        circles.append((center, radius, 'light'))
 
     for r in rHeavyList:
         center = (r/(1.+r)*y_flip_sign,0 )
         radius = 1./(1+r)
-        contour.append(Circle(center, radius, **heavyColor))
+        circles.append((center, radius, 'heavy'))
     for x in xHeavyList:
         center = (1*y_flip_sign,1./x)
         radius = 1./x
-        contour.append(Circle(center, radius, **heavyColor))
+        circles.append((center, radius, 'heavy'))
 
-    # clipping circle
-    clipc = Circle( [0,0], smithR, ec='k',fc='None',visible=True)
-    ax.add_patch( clipc)
+    labels = []
+    # Make annotations only if the radius is 1
+    if draw_labels and smithR == 1:
+        #Annotate real part
+        for value in rLightList:
+            # Set radius of real part's label; offset slightly left (Z
+            # chart, y_flip_sign == 1) or right (Y chart, y_flip_sign == -1)
+            # so label doesn't overlap chart's circles
+            rho = (value - 1)/(value + 1) - y_flip_sign*0.01
+            if y_flip_sign == 1:
+                halignstyle = "right"
+            else:
+                halignstyle = "left"
+            if y_flip_sign == -1:  # 'y' and 'yz' charts
+                value = 1/value
+            labels.append((str(value*ref_imm), rho*smithR, 0.01, halignstyle, "baseline", {}))
 
-    #draw x and y axis
-    ax.axhline(0, color='k', lw=.1, clip_path=clipc)
-    ax.axvline(1*y_flip_sign, color='k', clip_path=clipc)
-    ax.grid(0)
-    # Set axis limits by plotting white points so zooming works properly
-    ax.plot(smithR*np.array([-1.1, 1.1]), smithR*np.array([-1.1, 1.1]), 'w.', markersize = 0)
-    ax.axis('image') # Combination of 'equal' and 'tight'
+        #Annotate imaginary part
+        radialScaleFactor = 1.01 # Scale radius of label position by this
+                                 # factor. Making it >1 places the label
+                                 # outside the Smith chart's circle
+        for value in xLightList:
+            #Transforms from complex to cartesian
+            S = (1j*value - 1) / (1j*value + 1)
+            S *= smithR * radialScaleFactor
+            rhox = S.real
+            rhoy = S.imag * y_flip_sign
 
+            # Choose alignment anchor point based on label's value
+            if ((value == 1.0) or (value == -1.0)):
+                halignstyle = "center"
+            elif (rhox < 0.0):
+                halignstyle = "right"
+            else:
+                halignstyle = "left"
 
-    if not border:
-        ax.yaxis.set_ticks([])
-        ax.xaxis.set_ticks([])
-        for spine in ax.spines.values():
-            spine.set_color('none')
+            if (rhoy < 0):
+                valignstyle = "top"
+            else:
+                valignstyle = "bottom"
+            if y_flip_sign == -1:  # 'y' and 'yz' charts
+                value = 1/value
+            #Annotate value
+            labels.append((str(value*ref_imm) + 'j', rhox, rhoy, halignstyle, valignstyle, {}))
 
+        #Annotate 0 and inf
+        if y_flip_sign == 1:  # z and zy charts
+            label_left, label_right = '0.0', r'$\infty$'
+        else:  # y and yz charts
+            label_left, label_right = r'$\infty$', '0.0'
+        labels.append((label_left, -1.02, 0, "right", "center", {}))
+        labels.append((label_right, radialScaleFactor, 0, "left", "center", {}))
 
-    if draw_labels:
-        #Clear axis
-        ax.yaxis.set_ticks([])
-        ax.xaxis.set_ticks([])
-        for spine in ax.spines.values():
-            spine.set_color('none')
+        # annotate vswr circles
+        for vswr in vswrVeryLightList:
+            rhoy = (vswr-1.0) / (vswr+1.0)
+            labels.append((str(vswr), 0, rhoy*smithR, "center", "bottom", dict(color='grey', size='smaller')))
 
-        # Make annotations only if the radius is 1
-        if smithR == 1:
-            #Make room for annotation
-            ax.plot(np.array([-1.25, 1.25]), np.array([-1.1, 1.1]), 'w.', markersize = 0)
-            ax.axis('image')
-
-            #Annotate real part
-            for value in rLightList:
-                # Set radius of real part's label; offset slightly left (Z
-                # chart, y_flip_sign == 1) or right (Y chart, y_flip_sign == -1)
-                # so label doesn't overlap chart's circles
-                rho = (value - 1)/(value + 1) - y_flip_sign*0.01
-                if y_flip_sign == 1:
-                    halignstyle = "right"
-                else:
-                    halignstyle = "left"
-                if y_flip_sign == -1:  # 'y' and 'yz' charts
-                    value = 1/value
-                ax.annotate(str(value*ref_imm), xy=(rho*smithR, 0.01),
-                    xytext=(rho*smithR, 0.01), ha = halignstyle, va = "baseline")
-
-            #Annotate imaginary part
-            radialScaleFactor = 1.01 # Scale radius of label position by this
-                                     # factor. Making it >1 places the label
-                                     # outside the Smith chart's circle
-            for value in xLightList:
-                #Transforms from complex to cartesian
-                S = (1j*value - 1) / (1j*value + 1)
-                S *= smithR * radialScaleFactor
-                rhox = S.real
-                rhoy = S.imag * y_flip_sign
-
-                # Choose alignment anchor point based on label's value
-                if ((value == 1.0) or (value == -1.0)):
-                    halignstyle = "center"
-                elif (rhox < 0.0):
-                    halignstyle = "right"
-                else:
-                    halignstyle = "left"
-
-                if (rhoy < 0):
-                    valignstyle = "top"
-                else:
-                    valignstyle = "bottom"
-                if y_flip_sign == -1:  # 'y' and 'yz' charts
-                    value = 1/value
-                #Annotate value
-                ax.annotate(str(value*ref_imm) + 'j', xy=(rhox, rhoy),
-                             xytext=(rhox, rhoy), ha = halignstyle, va = valignstyle)
-
-            #Annotate 0 and inf
-            if y_flip_sign == 1:  # z and zy charts
-                label_left, label_right = '0.0', r'$\infty$'
-            else:  # y and yz charts
-                label_left, label_right = r'$\infty$', '0.0'
-            ax.annotate(label_left, xy=(-1.02, 0), xytext=(-1.02, 0),
-                             ha = "right", va = "center")
-            ax.annotate(label_right, xy=(radialScaleFactor, 0), xytext=(radialScaleFactor, 0),
-                             ha = "left", va = "center")
-
-            # annotate vswr circles
-            for vswr in vswrVeryLightList:
-                rhoy = (vswr-1.0) / (vswr+1.0)
-
-                ax.annotate(str(vswr), xy=(0, rhoy*smithR),
-                    xytext=(0, rhoy*smithR), ha="center", va="bottom",
-                    color='grey', size='smaller')
-
-    # loop though contours and draw them on the given axes
-    for currentContour in contour:
-        cc=ax.add_patch(currentContour)
-        cc.set_clip_path(clipc)
+    return circles, labels
 
 
 def plot_rectangular(x: NumberLike, y: NumberLike,
@@ -644,6 +656,74 @@ def _plotly_rect(x: NumberLike, y: NumberLike, *args,
         ax.update_yaxes(title_text=y_label)
     if title is not None:
         ax.update_layout(title_text=title)
+    return ax
+
+
+def _plotly_complex(z: NumberLike, x_label: str = 'Real', y_label: str = 'Imag',
+                    title: str = 'Complex Plane', show_legend: bool = True,
+                    axis: str = 'equal', ax=None, **kwargs):
+    """plotly counterpart of :func:`plot_complex_rectangular`, with equal axis scales."""
+    _plotly_rect(np.real(z), np.imag(z), x_label=x_label, y_label=y_label, title=title,
+                 show_legend=show_legend, ax=ax, **kwargs)
+    return ax.update_yaxes(scaleanchor='x', scaleratio=1)
+
+
+def _plotly_complex_polar(z: NumberLike, x_label: str | None = None, y_label: str | None = None,
+                          title: str | None = None, show_legend: bool = True,
+                          axis_equal: bool = False, ax=None, **kwargs):
+    """
+    plotly counterpart of :func:`plot_complex_polar`.
+
+    `y_label` titles the radial axis; `x_label` and `axis_equal` have no plotly equivalent.
+    """
+    trace = _plotly_kwargs((), kwargs)
+    trace.setdefault('showlegend', bool(show_legend and 'name' in trace))
+    ax.add_trace(_import_plotly().Scatterpolar(r=np.abs(z), theta=np.angle(z), thetaunit='radians', **trace))
+    if y_label is not None:
+        ax.update_polars(radialaxis_title_text=y_label)
+    if title is not None:
+        ax.update_layout(title_text=title)
+    return ax
+
+
+_PLOTLY_SMITH_COLORS = dict(superlight='whitesmoke', verylight='lightgrey', light='grey', heavy='black')
+_PLOTLY_ANCHORS = {'baseline': 'bottom', 'center': 'middle'}
+
+
+def _plotly_smith(smithR: Number = 1, chart_type: str = 'z', draw_labels: bool = False,
+                  ax=None, ref_imm: float = 1.0, draw_vswr: list | bool | None = None):
+    """
+    plotly counterpart of :func:`smith`.
+
+    Each line weight is one trace, clipped to the chart radius, with ``meta='skrf_smith_chart'``.
+    """
+    go = _import_plotly()
+    circles, labels = _smith_grid(smithR, chart_type, draw_labels, ref_imm, draw_vswr)
+    y_flip_sign = -1 if chart_type.startswith('y') else 1
+    unit_circle = np.exp(2j * np.pi * np.linspace(0, 1, 361))
+    paths = {weight: [] for weight in _PLOTLY_SMITH_COLORS}
+    for center, radius, weight in circles:
+        paths[weight].append(complex(*center) + radius * unit_circle)
+    # clipping circle and x and y axis
+    line = np.linspace(-1, 1, 201) * smithR
+    paths['heavy'] += [smithR * unit_circle, line, y_flip_sign + 1j * line]
+
+    for weight, color in _PLOTLY_SMITH_COLORS.items():
+        if not paths[weight]:
+            continue
+        p = np.concatenate([np.append(path, np.nan) for path in paths[weight]])
+        p[np.abs(p) > smithR * (1 + 1e-9)] = np.nan
+        p = p[~(np.isnan(p) & np.isnan(np.roll(p, 1)))]  # one gap between line pieces is enough
+        ax.add_trace(go.Scatter(x=p.real, y=p.imag, mode='lines', line=dict(color=color, width=1),
+                                hoverinfo='skip', showlegend=False, meta='skrf_smith_chart'))
+    for text, x, y, ha, va, kw in labels:
+        ax.add_annotation(x=x, y=y, text=text.replace(r'$\infty$', '∞'), showarrow=False,
+                          xanchor=ha, yanchor=_PLOTLY_ANCHORS.get(va, va), font_color=kw.get('color'))
+
+    ax.update_xaxes(range=[-1.1 * smithR, 1.1 * smithR], showgrid=False, zeroline=False, showticklabels=False)
+    ax.update_yaxes(range=[-1.1 * smithR, 1.1 * smithR], showgrid=False, zeroline=False, showticklabels=False,
+                    scaleanchor='x', scaleratio=1)
+    ax.update_layout(plot_bgcolor='white')
     return ax
 
 
@@ -1342,7 +1422,8 @@ def plot_s_db_time(netw: Network, *args, window: str | float | tuple[str, float]
 
 # plotting
 def plot_s_smith(netw: Network, m=None, n=None,r=1, ax=None, show_legend=True,\
-        chart_type='z', draw_labels=False, label_axes=False, draw_vswr=None, *args,**kwargs):
+        chart_type='z', draw_labels=False, label_axes=False, draw_vswr=None, *args,
+        backend: str | None = None, **kwargs):
     r"""
     Plots the scattering parameter on a smith chart.
 
@@ -1371,11 +1452,18 @@ def plot_s_smith(netw: Network, m=None, n=None,r=1, ax=None, show_legend=True,\
         draw rectangular border around image with ticks
     draw_vswr : list of numbers, Boolean or None
         draw VSWR circles. If True, default values are used.
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.options.plotting.backend``.
+        With plotly, `ax` may be a plotly Figure to add the traces to.
 
     \*args : arguments, optional
             passed to the matplotlib.plot command
     \*\*kwargs : keyword arguments, optional
-            passed to the matplotlib.plot command
+            passed to the matplotlib.plot command (or :class:`plotly.graph_objects.Scatter`)
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
 
     See Also
@@ -1391,11 +1479,15 @@ def plot_s_smith(netw: Network, m=None, n=None,r=1, ax=None, show_legend=True,\
     # TODO: prevent this from re-drawing smith chart if one already
     # exists on current set of axes
 
-    # get current axis if user doesn't supply and axis
-    import matplotlib.pyplot as plt
+    plotly = _resolve_backend(backend, ax) == 'plotly'
+    if plotly:
+        ax = _plotly_figure(ax)
+    else:
+        # get current axis if user doesn't supply and axis
+        import matplotlib.pyplot as plt
 
-    if ax is None:
-        ax = plt.gca()
+        if ax is None:
+            ax = plt.gca()
 
 
     if m is None:
@@ -1417,12 +1509,25 @@ def plot_s_smith(netw: Network, m=None, n=None,r=1, ax=None, show_legend=True,\
             # set the legend label for this trace to the networks name if it
             # exists, and they didn't pass a name key in the kwargs
             if generate_label:
-                kwargs['label'] = _get_label_str(netw, "S", m, n)
+                kwargs['label'] = _get_label_str(netw, "S", m, n, usetex=False if plotly else None)
+
+            if plotly:
+                if not any(trace.meta == 'skrf_smith_chart' for trace in ax.data):
+                    _plotly_smith(r, chart_type, draw_labels, ax=ax, draw_vswr=draw_vswr)
+                _plotly_rect(netw.s[:,m,n].real, netw.s[:,m,n].imag, *args, show_legend=show_legend, ax=ax,
+                             **kwargs)
+                continue
 
             # plot the desired attribute vs frequency
             if len (ax.patches) == 0:
                 smith(ax=ax, smithR = r, chart_type=chart_type, draw_labels=draw_labels, draw_vswr=draw_vswr)
             ax.plot(netw.s[:,m,n].real,  netw.s[:,m,n].imag, *args,**kwargs)
+
+    if plotly:
+        if label_axes:
+            ax.update_xaxes(title_text='Real')
+            ax.update_yaxes(title_text='Imaginary')
+        return ax
 
     #draw legend
     if show_legend:
@@ -2135,7 +2240,7 @@ def plot_contour(freq: Frequency,
 
 def plot_prop_complex(netw: Network, prop_name: str,
                     m=None, n=None, ax=None,
-                    show_legend=True, **kwargs):
+                    show_legend=True, *, backend: str | None = None, **kwargs):
     r"""
     plot the Network attribute :attr:`{}` vs frequency.
 
@@ -2153,9 +2258,16 @@ def plot_prop_complex(netw: Network, prop_name: str,
         draw legend or not
     y_label : string, optional
         the y-axis label
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.options.plotting.backend``.
+        With plotly, `ax` may be a plotly Figure to add the traces to.
 
     \*args,\**kwargs : arguments, keyword arguments
         passed to :func:`matplotlib.plot`
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
     Note
     ----
@@ -2167,6 +2279,10 @@ def plot_prop_complex(netw: Network, prop_name: str,
     --------
     >>> myntwk.plot_{}(m=1,n=0,color='r')
     """
+    plotly = _resolve_backend(backend, ax) == 'plotly'
+    if plotly:
+        ax = _plotly_figure(ax)
+    plot_z = _plotly_complex if plotly else plot_complex_rectangular
 
     # create index lists, if not provided by user
     if m is None:
@@ -2189,17 +2305,20 @@ def plot_prop_complex(netw: Network, prop_name: str,
             # name if it exists, and they didn't pass a name key in
             # the kwargs
             if gen_label:
-                kwargs['label'] = _get_label_str(netw, prop_name[0].upper(), m, n)
+                kwargs['label'] = _get_label_str(netw, prop_name[0].upper(), m, n,
+                                                 usetex=False if plotly else None)
 
             # plot the desired attribute vs frequency
-            plot_complex_rectangular(
+            plot_z(
                 z=getattr(netw, prop_name)[:, m, n],
                 show_legend=show_legend, ax=ax,
                 **kwargs)
 
+    return ax if plotly else None
+
 def plot_prop_polar(netw: Network, prop_name: str,
                     m=None, n=None, ax=None,
-                    show_legend=True, **kwargs):
+                    show_legend=True, *, backend: str | None = None, **kwargs):
 
     r"""
     plot the Network attribute :attr:`{}` vs frequency.
@@ -2218,9 +2337,16 @@ def plot_prop_polar(netw: Network, prop_name: str,
         draw legend or not
     y_label : string, optional
         the y-axis label
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.options.plotting.backend``.
+        With plotly, `ax` may be a plotly Figure to add the traces to.
 
     \*args,\**kwargs : arguments, keyword arguments
         passed to :func:`matplotlib.plot`
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
     Note
     ----
@@ -2232,6 +2358,10 @@ def plot_prop_polar(netw: Network, prop_name: str,
     --------
     >>> myntwk.plot_{}(m=1,n=0,color='r')
     """
+    plotly = _resolve_backend(backend, ax) == 'plotly'
+    if plotly:
+        ax = _plotly_figure(ax)
+    plot_z = _plotly_complex_polar if plotly else plot_complex_polar
 
     # create index lists, if not provided by user
     if m is None:
@@ -2254,10 +2384,13 @@ def plot_prop_polar(netw: Network, prop_name: str,
             # name if it exists, and they didn't pass a name key in
             # the kwargs
             if gen_label:
-                kwargs['label'] = _get_label_str(netw, prop_name[0].upper(), m, n)
+                kwargs['label'] = _get_label_str(netw, prop_name[0].upper(), m, n,
+                                                 usetex=False if plotly else None)
 
             # plot the desired attribute vs frequency
-            plot_complex_polar(
+            plot_z(
                 z = getattr(netw,prop_name)[:,m,n],
                 show_legend = show_legend, ax = ax,
                 **kwargs)
+
+    return ax if plotly else None

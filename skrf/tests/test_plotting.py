@@ -186,12 +186,10 @@ def test_plotly_missing_raises_import_error(ntwk1: rf.Network, monkeypatch):
         ntwk1.plot_s_db(backend="plotly")
 
 @pytest.mark.parametrize("call", [
-    lambda n, ns: n.plot_s_smith(),
-    lambda n, ns: n.plot_s_polar(),
     lambda n, ns: n.plot_it_all(),
     lambda n, ns: ns.plot_uncertainty_bounds_s_db(),
     lambda n, ns: ns.plot_violin("s_db"),
-], ids=["plot_s_smith", "plot_s_polar", "plot_it_all", "plot_uncertainty_bounds_s_db", "plot_violin"])
+], ids=["plot_it_all", "plot_uncertainty_bounds_s_db", "plot_violin"])
 def test_plotly_not_implemented_does_not_fall_back(ntwk1: rf.Network, ntwk_set_zip: NetworkSet, call):
     rf.options.plotting.backend = "plotly"
     with pytest.raises(NotImplementedError, match="plotly"):
@@ -223,7 +221,8 @@ def test_plot_prop_keyword_args(ntwk1: rf.Network, mpl_axes):
 def test_plotly_does_not_import_matplotlib():
     loaded = _modules_after(
         "import skrf as rf; rf.options.plotting.backend = 'plotly'; n = rf.data.ring_slot; "
-        "n.plot_s_db(); n.plot_s_time_db(); n.frequency.plot(n.s_db); n.plot_passivity()")
+        "n.plot_s_db(); n.plot_s_time_db(); n.frequency.plot(n.s_db); n.plot_passivity(); "
+        "n.plot_s_smith(); n.plot_s_polar(); n.plot_s_complex()")
     assert "plotly" in loaded
     assert "matplotlib" not in loaded
 
@@ -279,3 +278,65 @@ def test_plotly_kwargs_translation(ntwk1: rf.Network):
     assert (trace.opacity, trace.name) == (0.5, "a")
     trace = ntwk1.plot_s_db(0, 0, marker=dict(size=5), backend="plotly").data[0]
     assert (trace.marker.size, trace.mode) == (5, "lines")
+
+def _smith_grid_traces(fig) -> list:
+    return [t for t in fig.data if t.meta == "skrf_smith_chart"]
+
+@needs_plotly
+def test_plotly_complex_parity(ntwk1_dc: rf.Network, primary_properties: str, mpl_axes):
+    method = f"plot_{primary_properties}_complex"
+    fig = getattr(ntwk1_dc, method)(backend="plotly")
+    getattr(ntwk1_dc, method)(ax=mpl_axes)
+    assert len(fig.data) == ntwk1_dc.nports**2
+    assert_plotly_parity(fig, mpl_axes)
+    assert (fig.layout.xaxis.title.text, fig.layout.yaxis.scaleanchor) == ("Real", "x")
+
+@needs_plotly
+def test_plotly_polar(ntwk1_dc: rf.Network, primary_properties: str):
+    fig = getattr(ntwk1_dc, f"plot_{primary_properties}_polar")(backend="plotly")
+    z = getattr(ntwk1_dc, primary_properties)
+    ports = [(m, n) for m in range(ntwk1_dc.nports) for n in range(ntwk1_dc.nports)]
+    assert len(fig.data) == len(ports)
+    for trace, (m, n) in zip(fig.data, ports):
+        assert (trace.type, trace.thetaunit) == ("scatterpolar", "radians")
+        np.testing.assert_allclose(trace.r, np.abs(z[:, m, n]))
+        np.testing.assert_allclose(trace.theta, np.angle(z[:, m, n]))
+        assert trace.name == rf.plotting._get_label_str(ntwk1_dc, primary_properties.upper(), m, n, usetex=False)
+
+@needs_plotly
+@pytest.mark.parametrize("chart_type", ["z", "y", "zy", "yz"])
+def test_plotly_smith(ntwk1_dc: rf.Network, chart_type: str):
+    r = 0.5
+    fig = ntwk1_dc.plot_s_smith(r=r, chart_type=chart_type, label_axes=True, backend="plotly")
+    grid, data = _smith_grid_traces(fig), [t for t in fig.data if t.meta != "skrf_smith_chart"]
+    assert len(data) == ntwk1_dc.nports**2
+    np.testing.assert_allclose(data[1].x, ntwk1_dc.s[:, 0, 1].real)
+    np.testing.assert_allclose(data[1].y, ntwk1_dc.s[:, 0, 1].imag)
+    grid_points = np.concatenate([np.asarray(t.x, dtype=float) + 1j * np.asarray(t.y, dtype=float) for t in grid])
+    assert np.nanmax(np.abs(grid_points)) <= r * (1 + 1e-9)
+    assert ("whitesmoke" in [t.line.color for t in grid]) == (chart_type in ("zy", "yz"))
+    np.testing.assert_allclose(fig.layout.xaxis.range, [-1.1 * r, 1.1 * r])
+    assert (fig.layout.xaxis.title.text, fig.layout.yaxis.title.text) == ("Real", "Imaginary")
+
+@needs_plotly
+def test_plotly_smith_labels(ntwk1_dc: rf.Network):
+    fig = ntwk1_dc.plot_s_smith(draw_labels=True, draw_vswr=[2, 5], backend="plotly")
+    texts = [a.text for a in fig.layout.annotations]
+    assert {"∞", "0.0", "1.0", "1.0j", "2", "5"} <= set(texts)
+    assert ntwk1_dc.plot_s_smith(draw_labels=True, chart_type="y", backend="plotly").layout.annotations[0].text \
+        == "5.0"  # admittance labels, as matplotlib
+
+@needs_plotly
+@pytest.mark.parametrize("kind", ["complex", "polar", "smith"])
+def test_plotly_geometric_overlay(ntwk1: rf.Network, kind: str):
+    fig = getattr(ntwk1, f"plot_s_{kind}")(0, 0, backend="plotly")
+    n_traces, n_grid = len(fig.data), len(_smith_grid_traces(fig))
+    assert getattr(ntwk1, f"plot_s_{kind}")(1, 1, ax=fig) is fig
+    assert len(fig.data) == n_traces + 1
+    assert len(_smith_grid_traces(fig)) == n_grid  # the smith chart is drawn once
+
+@needs_plotly
+def test_plotly_networkset_smith(ntwk1: rf.Network, ntwk_set_zip: NetworkSet):
+    fig = ntwk_set_zip.plot_s_smith(backend="plotly")
+    assert len(fig.data) - len(_smith_grid_traces(fig)) == sum(n.nports**2 for n in ntwk_set_zip)
+    assert len(_smith_grid_traces(fig)) == len(_smith_grid_traces(ntwk1.plot_s_smith(backend="plotly")))

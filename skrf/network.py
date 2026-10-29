@@ -5342,7 +5342,6 @@ class Network:
     @copy_doc(rfplt.plot_s_smith)
     def plot_s_smith(self, m=None, n=None,r=1, ax=None, show_legend=True,\
         chart_type='z', draw_labels=False, label_axes=False, draw_vswr=None, *args,**kwargs):
-        _check_backend_supported("Network.plot_s_smith", kwargs.pop("backend", None), ax)
         return rfplt.plot_s_smith(self, m, n, r, ax, show_legend, chart_type,
                             draw_labels, label_axes, draw_vswr, *args, **kwargs)
 
@@ -5353,14 +5352,12 @@ class Network:
         return rfplt.plot_it_all(self, *args, **kwargs)
 
     @copy_doc(rfplt.plot_prop_complex)
-    def plot_prop_complex(self, prop_name, m=None, n=None, ax=None, *args, backend=None, **kwargs):
-        _check_backend_supported(f"Network.plot_{prop_name}_complex", backend, ax)
-        return rfplt.plot_prop_complex(self, prop_name, m, n, ax, *args, **kwargs)
+    def plot_prop_complex(self, *args, **kwargs):
+        return rfplt.plot_prop_complex(self, *args, **kwargs)
 
     @copy_doc(rfplt.plot_prop_polar)
-    def plot_prop_polar(self, prop_name, m=None, n=None, ax=None, *args, backend=None, **kwargs):
-        _check_backend_supported(f"Network.plot_{prop_name}_polar", backend, ax)
-        return rfplt.plot_prop_polar(self, prop_name, m, n, ax, *args, **kwargs)
+    def plot_prop_polar(self, *args, **kwargs):
+        return rfplt.plot_prop_polar(self, *args, **kwargs)
 
     def _fmt_trace_name(self, m: int, n: int) -> str:
         port_sep = "_" if self.nports > 9 else ""
