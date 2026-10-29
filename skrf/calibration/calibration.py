@@ -6347,7 +6347,7 @@ def unterminate(ntwk, gamma_f, gamma_r):
 
     Parameters
     ----------
-    two_port : 2-port Network
+    ntwk : 2-port Network
         the raw measurement
     gamma_f : 1-port Network
         the measured forward switch term.
@@ -6392,7 +6392,7 @@ def terminate(ntwk, gamma_f, gamma_r):
 
     Parameters
     ----------
-    two_port : 2-port Network
+    ntwk : 2-port Network
         an unterminated network
     gamma_f : 1-port Network
         measured forward switch term.
@@ -6436,7 +6436,7 @@ def terminate_nport(ntwk, gammas):
 
     Parameters
     ----------
-    two_port : Network
+    ntwk : Network
         an unterminated network.
     gammas : list of 1-port Network
         measured switch term.
