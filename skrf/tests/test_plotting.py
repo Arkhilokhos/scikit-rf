@@ -225,7 +225,9 @@ def test_plotly_does_not_import_matplotlib():
         "n.plot_s_db(); n.plot_s_time_db(); n.frequency.plot(n.s_db); n.plot_passivity(); "
         "n.plot_s_smith(); n.plot_s_polar(); n.plot_s_complex(); n.plot_it_all(); "
         "ns = rf.networkSet.NetworkSet([n, n]); ns.plot_uncertainty_bounds_s_db(); ns.plot_minmax_bounds_s_db(); "
-        "ns.plot_violin('s_db'); ns.plot_uncertainty_decomposition()")
+        "ns.plot_violin('s_db'); ns.plot_uncertainty_decomposition(); s = n.s[:, 0, 0]; "
+        "rf.plotting.plot_rectangular(n.f, n.s_db[:, 0, 0]); rf.plotting.plot_complex_rectangular(s); "
+        "rf.plotting.plot_complex_polar(s); rf.plotting.plot_smith(s); rf.plotting.subplot_params(n)")
     assert "plotly" in loaded
     assert "matplotlib" not in loaded
 
@@ -404,3 +406,55 @@ def test_plotly_plot_it_all(ntwk1_dc: rf.Network):
     assert {t.xaxis for t in data} == {"x", "x2", "x3", "x4"}
     assert (fig.layout.yaxis3.scaleanchor, fig.layout.yaxis4.scaleanchor) == ("x3", "x4")
     assert [t.name for t in fig.data if t.showlegend] == [t.name for t in data if t.xaxis == "x"]
+
+@needs_plotly
+@pytest.mark.parametrize("func", ["plot_rectangular", "plot_complex_rectangular", "plot_smith"])
+def test_plotly_public_plot_functions(ntwk1: rf.Network, func: str, mpl_axes):
+    args = (ntwk1.f, ntwk1.s_db[:, 0, 0]) if func == "plot_rectangular" else (ntwk1.s[:, 0, 0],)
+    fig = getattr(rf.plotting, func)(*args, label="a", backend="plotly")
+    getattr(rf.plotting, func)(*args, label="a", ax=mpl_axes)
+    (trace,) = [t for t in fig.data if t.meta != "skrf_smith_chart"]
+    np.testing.assert_allclose(trace.x, mpl_axes.lines[-1].get_xdata())
+    np.testing.assert_allclose(trace.y, mpl_axes.lines[-1].get_ydata())
+    assert trace.name == "a"
+    n_traces = len(fig.data)
+    assert getattr(rf.plotting, func)(*args, ax=fig) is fig
+    assert len(fig.data) == n_traces + 1  # the smith chart is drawn once
+
+@needs_plotly
+def test_plotly_plot_polar():
+    fig = rf.plotting.plot_complex_polar(np.array([1j, -2]), y_label="r", title="t", backend="plotly")
+    (trace,) = fig.data
+    assert (trace.type, trace.thetaunit) == ("scatterpolar", "radians")
+    np.testing.assert_allclose(trace.r, [1, 2])
+    np.testing.assert_allclose(trace.theta, [np.pi / 2, np.pi])
+    assert (fig.layout.polar.radialaxis.title.text, fig.layout.title.text) == ("r", "t")
+
+@needs_plotly
+def test_plotly_subplot_params(ntwk1: rf.Network):
+    fig = rf.plotting.subplot_params(ntwk1, backend="plotly")
+    assert len(fig.data) == ntwk1.nports**2
+    np.testing.assert_allclose(fig.data[1].y, ntwk1.s_db[:, 1, 0])  # in port_tuples order, as matplotlib
+    assert {t.xaxis for t in fig.data} == {"x", "x2", "x3", "x4"}
+    assert [a.text for a in fig.layout.annotations] == ["S11", "S21", "S12", "S22"]
+    assert all(t.showlegend for t in fig.data)
+    assert (fig.layout.width, fig.layout.height) == (800, 800)
+
+def test_shade_bands(ntwk1: rf.Network, mpl_axes):
+    ntwk1.plot_s_db(0, 0, ax=mpl_axes)
+    rf.plotting.shade_bands(ntwk1.f[[0, 40, 80]], alpha=0.2)
+    assert len(mpl_axes.collections) == 2
+
+@needs_plotly
+def test_plotly_plot_contour(monkeypatch):
+    shown = []
+    monkeypatch.setattr(go.Figure, "show", lambda fig: shown.append(fig))
+    rng = np.random.default_rng(0)
+    x, y = rng.uniform(-0.6, 0.6, (2, 100))
+    z = np.hypot(x - 0.1, y)
+    gamma, value = rf.plotting.plot_contour(1e9, x, y, z, min0max1=0,
+                                            title="t", backend="plotly")
+    assert value == z.min()
+    (fig,) = shown
+    assert [t.type for t in fig.data] == ["contour"] + ["scatter"] * 4
+    assert np.isnan(fig.data[0].z).any() and fig.layout.title.text == "t"
