@@ -155,14 +155,6 @@ def _import_plotly():
     return go
 
 
-def _check_backend_supported(method_name: str, backend: str | None = None, ax=None) -> str:
-    """Raise NotImplementedError for a method that has no plotly implementation yet."""
-    backend = _resolve_backend(backend, ax)
-    if backend != 'matplotlib':
-        raise NotImplementedError(f"{method_name} is not implemented for the {backend!r} plotting backend")
-    return backend
-
-
 def _matplotlib_only(method_name: str, kwargs: dict):
     """Keep a matplotlib-only helper, and the plot methods it forwards `kwargs` to, on matplotlib."""
     if _validate_backend(kwargs.get('backend', 'matplotlib')) != 'matplotlib':
@@ -657,6 +649,25 @@ def _plotly_rect(x: NumberLike, y: NumberLike, *args,
     if title is not None:
         ax.update_layout(title_text=title)
     return ax
+
+
+def _plotly_trace_color(fig) -> str:
+    """Line color of the last trace of `fig`, set to plotly's default for its index if unset."""
+    trace = fig.data[-1]
+    if trace.line.color is None:
+        from plotly.colors import qualitative
+        trace.line.color = qualitative.Plotly[(len(fig.data) - 1) % len(qualitative.Plotly)]
+    return trace.line.color
+
+
+def _plotly_fill_between(fig, frequency: Frequency, lower: NumberLike, upper: NumberLike,
+                         color: str | None = None, alpha: float = .3, **kwargs):
+    """plotly counterpart of ``ax.fill_between`` vs `frequency`, without a legend entry."""
+    x, _ = _plotly_frequency_x(fig, frequency)
+    fig.add_trace(_import_plotly().Scatter(x=np.concatenate([x, x[::-1]]),
+                                           y=np.concatenate([upper, lower[::-1]]),
+                                           fill='toself', fillcolor=color, opacity=alpha, mode='none',
+                                           hoverinfo='skip', showlegend=False, **kwargs))
 
 
 def _plotly_complex(z: NumberLike, x_label: str = 'Real', y_label: str = 'Imag',
@@ -1553,6 +1564,11 @@ def plot_it_all(netw: Network, *args, **kwargs):
             passed to the matplotlib.plot command
     \*\*kwargs : keyword arguments, optional
             passed to the matplotlib.plot command
+            (or :class:`plotly.graph_objects.Scatter`)
+
+    Returns
+    -------
+    None, or with the plotly `backend` a new plotly Figure with 2x2 subplots
 
     See Also
     --------
@@ -1566,6 +1582,25 @@ def plot_it_all(netw: Network, *args, **kwargs):
     >>> from skrf.data import ring_slot
     >>> ring_slot.plot_it_all()
     """
+    kwargs['backend'] = _resolve_backend(kwargs.get('backend'))
+    if kwargs['backend'] == 'plotly':
+        _import_plotly()
+        from plotly.subplots import make_subplots
+
+        fig = make_subplots(rows=2, cols=2)
+        for i, method in enumerate([netw.plot_s_db, netw.plot_s_deg, netw.plot_s_smith, netw.plot_s_complex]):
+            sub, row, col, xaxis = method(*args, **kwargs), i // 2 + 1, i % 2 + 1, f"x{i + 1 if i else ''}"
+            for trace in sub.data:  # one legend for all panels
+                trace.update(legendgroup=trace.name, showlegend=bool(trace.showlegend) and i == 0)
+            fig.add_traces(sub.data, rows=row, cols=col)
+            fig.update_xaxes(sub.layout.xaxis, row=row, col=col)
+            fig.update_yaxes(sub.layout.yaxis, row=row, col=col)
+            if sub.layout.yaxis.scaleanchor:
+                fig.update_yaxes(scaleanchor=xaxis, row=row, col=col)
+            for annotation in sub.layout.annotations:
+                fig.add_annotation(annotation, row=row, col=col)
+        return fig
+
     import matplotlib.pyplot as plt
 
     plt.clf()
@@ -1686,7 +1721,6 @@ def animate(self: NetworkSet, attr: str = 's_deg', ylims: tuple = (-5, 5),
 #
 #------------------------------
 
-@axes_kwarg
 def plot_uncertainty_bounds_component(
         self: NetworkSet, attribute: PrimaryPropertiesT,
         m: int | None = None, n: int | None = None, *,
@@ -1694,7 +1728,7 @@ def plot_uncertainty_bounds_component(
         alpha: float = .3, color_error: str | None = None,
         markevery_error: int = 20, ax: Axes = None,
         ppf: bool = None, kwargs_error: dict = None,
-        **kwargs):
+        backend: str | None = None, **kwargs):
     r"""
     Plot mean value of a NetworkSet with +/- uncertainty bounds in an Network's attribute.
 
@@ -1735,9 +1769,17 @@ def plot_uncertainty_bounds_component(
         upper and lower bounds. Default is None
      kwargs_error : dict
          dictionary of kwargs to pass to the fill_between or
-         errorbar plot command depending on value of type.
+         errorbar plot command depending on value of type
+         (to :class:`plotly.graph_objects.Scatter` with plotly).
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.options.plotting.backend``.
+        With plotly, `ax` may be a plotly Figure to add the traces to.
     \*\*kwargs :
         passed to Network.plot_s_re command used to plot mean response
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
     Note
     ----
@@ -1745,6 +1787,8 @@ def plot_uncertainty_bounds_component(
     similar. uncertainty for wrapped phase blows up at +-pi.
 
     """
+    plotly = _resolve_backend(backend, ax) == 'plotly'
+    ax = _plotly_figure(ax) if plotly else _get_axes(ax)
 
     kwargs_error = kwargs_error if kwargs_error else {}
 
@@ -1784,6 +1828,10 @@ def plot_uncertainty_bounds_component(
 
             if type == 'shade':
                 ntwk_mean.plot_s_re(ax=ax, m=m, n=n, **kwargs)
+                if plotly:
+                    _plotly_fill_between(ax, ntwk_mean.frequency, lower_bound.real, upper_bound.real,
+                                         color_error or _plotly_trace_color(ax), alpha, **kwargs_error)
+                    continue
                 if color_error is None:
                     color_error = ax.get_lines()[-1].get_color()
                 ax.fill_between(ntwk_mean.frequency.f,
@@ -1793,11 +1841,18 @@ def plot_uncertainty_bounds_component(
 
             elif type == 'bar':
                 ntwk_mean.plot_s_re(ax=ax, m=m, n=n, **kwargs)
+                y = ntwk_mean.s_re[:, m, n].squeeze()[::markevery_error]
+                yerr = ntwk_std.s_mag[:, m, n].squeeze()[::markevery_error]
+                if plotly:
+                    x, _ = _plotly_frequency_x(ax, ntwk_mean.frequency)
+                    ax.add_trace(_import_plotly().Scatter(x=x[::markevery_error], y=y, mode='markers',
+                                                          error_y=dict(array=yerr),
+                                                          marker_color=color_error or _plotly_trace_color(ax),
+                                                          showlegend=False, **kwargs_error))
+                    continue
                 if color_error is None:
                     color_error = ax.get_lines()[-1].get_color()
-                ax.errorbar(ntwk_mean.frequency.f[::markevery_error],
-                            ntwk_mean.s_re[:, m, n].squeeze()[::markevery_error],
-                            yerr=ntwk_std.s_mag[:, m, n].squeeze()[::markevery_error],
+                ax.errorbar(ntwk_mean.frequency.f[::markevery_error], y, yerr=yerr,
                             color=color_error, **kwargs_error)
 
             else:
@@ -1807,13 +1862,16 @@ def plot_uncertainty_bounds_component(
             scale_frequency_ticks(ax, ntwk_mean.frequency.unit)
             ax.axis('tight')
 
-@axes_kwarg
+    if plotly:
+        # the label of the last component, as matplotlib
+        return ax.update_yaxes(title_text=self[0].Y_LABEL_DICT.get(plot_attribute[2:], ''))
+
 def plot_minmax_bounds_component(self: NetworkSet, attribute: PrimaryPropertiesT, m: int = 0, n: int = 0,
                                  *, type: str = 'shade',
                                  alpha: float = .3, color_error: str | None = None,
                                  markevery_error: int = 20, ax: Axes = None,
                                  ppf: bool = None, kwargs_error: dict = None,
-                                 **kwargs):
+                                 backend: str | None = None, **kwargs):
     r"""
     Plots mean value of the NetworkSet with minimum and maximum bounds in an Network's attribute.
 
@@ -1855,9 +1913,17 @@ def plot_minmax_bounds_component(self: NetworkSet, attribute: PrimaryPropertiesT
         upper and lower bounds. Default is None
      kwargs_error : dict
          dictionary of kwargs to pass to the fill_between or
-         errorbar plot command depending on value of type.
+         errorbar plot command depending on value of type
+         (to :class:`plotly.graph_objects.Scatter` with plotly).
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.options.plotting.backend``.
+        With plotly, `ax` may be a plotly Figure to add the traces to.
     \*\*kwargs :
         passed to Network.plot_s_re command used to plot mean response
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
     Note
     ----
@@ -1865,6 +1931,8 @@ def plot_minmax_bounds_component(self: NetworkSet, attribute: PrimaryPropertiesT
     similar.  Uncertainty for wrapped phase blows up at +-pi.
 
     """
+    plotly = _resolve_backend(backend, ax) == 'plotly'
+    ax = _plotly_figure(ax) if plotly else _get_axes(ax)
 
     kwargs_error = kwargs_error if kwargs_error else {}
 
@@ -1889,6 +1957,10 @@ def plot_minmax_bounds_component(self: NetworkSet, attribute: PrimaryPropertiesT
 
     if type == 'shade':
         ntwk_mean.plot_s_re(ax=ax,m=m,n=n, **kwargs)
+        if plotly:
+            _plotly_fill_between(ax, ntwk_mean.frequency, lower_bound, upper_bound,
+                                 color_error or _plotly_trace_color(ax), alpha, **kwargs_error)
+            return ax.update_yaxes(title_text=self[0].Y_LABEL_DICT.get(attribute[2:], ''))
         if color_error is None:
             color_error = ax.get_lines()[-1].get_color()
         ax.fill_between(ntwk_mean.frequency.f,
@@ -1912,12 +1984,11 @@ def plot_minmax_bounds_component(self: NetworkSet, attribute: PrimaryPropertiesT
     scale_frequency_ticks(ax, ntwk_mean.frequency.unit)
     ax.axis('tight')
 
-@axes_kwarg
 def plot_violin(self: NetworkSet, attribute: PrimaryPropertiesT, m: int = 0, n: int = 0,
                          *, widths: float = None, showmeans: bool = True,
                          showextrema: bool = True, showmedians: bool = False,
                          quantiles = None, points: int = 100, bw_method = None,
-                         ax: Axes = None, **kwargs
+                         ax: Axes = None, backend: str | None = None, **kwargs
     ):
     r"""Plots the violin plot of the network set for the desired attribute.
 
@@ -1951,14 +2022,25 @@ def plot_violin(self: NetworkSet, attribute: PrimaryPropertiesT, m: int = 0, n: 
         _description_. Defaults to None.
     ax : matplotlib axes object
         Axes to plot on. Default is None.
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.options.plotting.backend``.
+        With plotly, `ax` may be a plotly Figure to add the violins to; `showmedians`
+        shows a box with the median, `points` and `showextrema` are ignored, and
+        `quantiles` and `bw_method` are not supported.
     \*\*kwargs :
-        passed to :meth:`matplotlib.pyplot.violinplot`
+        passed to :meth:`matplotlib.pyplot.violinplot` (or :class:`plotly.graph_objects.Violin`)
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
     Note
     ----
     For phase plots you probably want s_deg_unwrap, or
     similar.  Uncertainty for wrapped phase blows up at +-pi.
     """
+    plotly = _resolve_backend(backend, ax) == 'plotly'
+    ax = _plotly_figure(ax) if plotly else _get_axes(ax)
 
     freq = self.ntwk_set[0].f
 
@@ -1969,6 +2051,17 @@ def plot_violin(self: NetworkSet, attribute: PrimaryPropertiesT, m: int = 0, n: 
         widths = 0.5
 
     data = np.array([getattr(p, attribute)[:,m,n] for p in self.ntwk_set])
+
+    if plotly:
+        if quantiles is not None or bw_method is not None:
+            raise NotImplementedError("quantiles and bw_method are not supported by the plotly backend")
+        x, x_label = _plotly_frequency_x(ax, self.ntwk_set[0].frequency)
+        x_per_hz = x[-1] / freq[-1] if freq[-1] else 1  # widths are in Hz, as freq
+        ax.add_trace(_import_plotly().Violin(x=np.tile(x, len(data)), y=data.ravel(), width=widths * x_per_hz,
+                                             spanmode='hard', meanline_visible=showmeans,
+                                             box_visible=showmedians, points=False, **kwargs))
+        ax.update_xaxes(title_text=x_label)
+        return ax.update_yaxes(title_text=self[0].Y_LABEL_DICT.get(attribute[2:], ''))
 
     ax.violinplot(data, freq, widths=widths, showmeans=showmeans, showextrema=showextrema,
                   showmedians=showmedians, quantiles=quantiles, points=points, bw_method=bw_method, **kwargs)
@@ -1986,7 +2079,7 @@ def plot_uncertainty_bounds_s_db(self: NetworkSet, *args, **kwargs):
 
     """
     kwargs.update({'ppf':mf.magnitude_2_db})
-    self.plot_uncertainty_bounds_component("s_mag", *args,**kwargs)
+    return self.plot_uncertainty_bounds_component("s_mag", *args,**kwargs)
 
 def plot_minmax_bounds_s_db(self: NetworkSet, *args, **kwargs):
     """
@@ -1996,7 +2089,7 @@ def plot_minmax_bounds_s_db(self: NetworkSet, *args, **kwargs):
 
     """
     kwargs.update({'ppf':mf.magnitude_2_db})
-    self.plot_minmax_bounds_component("s_mag", *args,**kwargs)
+    return self.plot_minmax_bounds_component("s_mag", *args,**kwargs)
 
 def plot_minmax_bounds_s_db10(self: NetworkSet, *args, **kwargs):
     """
@@ -2006,7 +2099,7 @@ def plot_minmax_bounds_s_db10(self: NetworkSet, *args, **kwargs):
 
     """
     kwargs.update({'ppf':mf.mag_2_db10})
-    self.plot_minmax_bounds_component("s_mag", *args,**kwargs)
+    return self.plot_minmax_bounds_component("s_mag", *args,**kwargs)
 
 def plot_uncertainty_bounds_s_time_db(self: NetworkSet, *args, **kwargs):
     """
@@ -2016,7 +2109,7 @@ def plot_uncertainty_bounds_s_time_db(self: NetworkSet, *args, **kwargs):
 
     """
     kwargs.update({'ppf':mf.magnitude_2_db})
-    self.plot_uncertainty_bounds_component("s_time_mag", *args,**kwargs)
+    return self.plot_uncertainty_bounds_component("s_time_mag", *args,**kwargs)
 
 def plot_minmax_bounds_s_time_db(self: NetworkSet, *args, **kwargs):
     """
@@ -2026,10 +2119,11 @@ def plot_minmax_bounds_s_time_db(self: NetworkSet, *args, **kwargs):
 
     """
     kwargs.update({'ppf':mf.magnitude_2_db})
-    self.plot_minmax_bounds_component("s_time_mag", *args, **kwargs)
+    return self.plot_minmax_bounds_component("s_time_mag", *args, **kwargs)
 
-def plot_uncertainty_decomposition(self: NetworkSet, m: int = 0, n: int = 0):
-    """
+def plot_uncertainty_decomposition(self: NetworkSet, m: int = 0, n: int = 0, *,
+                                   backend: str | None = None, **kwargs):
+    r"""
     Plot the total and component-wise uncertainty.
 
     Parameters
@@ -2038,16 +2132,32 @@ def plot_uncertainty_decomposition(self: NetworkSet, m: int = 0, n: int = 0):
         first s-parameters index
     n :
         second s-parameter index
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.options.plotting.backend``
+    \*\*kwargs :
+        passed to :meth:`~skrf.network.Network.plot_s_mag`
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
     """
-    import matplotlib.pyplot as plt
-    if self.name is not None:
-        plt.title(f"Uncertainty Decomposition: {self.name} $S_{{{self.ntwk_set[0]._fmt.trace_name(m,n)}}}$")
-    self.std_s.plot_s_mag(label='Distance', m=m,n=n, backend='matplotlib')
-    self.std_s_re.plot_s_mag(label='Real',  m=m,n=n, backend='matplotlib')
-    self.std_s_im.plot_s_mag(label='Imaginary',  m=m,n=n, backend='matplotlib')
-    self.std_s_mag.plot_s_mag(label='Magnitude',  m=m,n=n, backend='matplotlib')
-    self.std_s_arcl.plot_s_mag(label='Arc-length',  m=m,n=n, backend='matplotlib')
+    backend = _start_plot(backend, kwargs)
+    if backend == "plotly":
+        if self.name is not None:
+            kwargs["ax"].update_layout(title_text=f"Uncertainty Decomposition: {self.name} "
+                                                  f"S{self.ntwk_set[0]._fmt_trace_name(m, n)}")
+    else:
+        import matplotlib.pyplot as plt
+        if self.name is not None:
+            plt.title(f"Uncertainty Decomposition: {self.name} $S_{{{self.ntwk_set[0]._fmt_trace_name(m,n)}}}$")
+    self.std_s.plot_s_mag(label='Distance', m=m,n=n, backend=backend, **kwargs)
+    self.std_s_re.plot_s_mag(label='Real',  m=m,n=n, backend=backend, **kwargs)
+    self.std_s_im.plot_s_mag(label='Imaginary',  m=m,n=n, backend=backend, **kwargs)
+    self.std_s_mag.plot_s_mag(label='Magnitude',  m=m,n=n, backend=backend, **kwargs)
+    self.std_s_arcl.plot_s_mag(label='Arc-length',  m=m,n=n, backend=backend, **kwargs)
+    if backend == "plotly":
+        return kwargs["ax"]
 
 def plot_logsigma(self: NetworkSet, label_axis: bool = True, *args, backend: str | None = None, **kwargs):
     r"""

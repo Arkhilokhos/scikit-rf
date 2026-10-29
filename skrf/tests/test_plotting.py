@@ -113,6 +113,10 @@ def test_plot_uncertainty_bounds_s_time_db(ntwk_set_zip: NetworkSet):
 def test_plot_uncertainty_decomposition(ntwk_set_zip: NetworkSet):
     ntwk_set_zip.plot_uncertainty_decomposition()
 
+def test_plot_uncertainty_decomposition_title(ntwk1: rf.Network):
+    NetworkSet([ntwk1, ntwk1], name="set").plot_uncertainty_decomposition()
+    assert mpl.pyplot.gca().get_title() == "Uncertainty Decomposition: set $S_{11}$"
+
 def test_plot_minmax_bounds_s_db(ntwk_set_zip: NetworkSet):
     ntwk_set_zip.plot_minmax_bounds_s_db()
 
@@ -185,15 +189,11 @@ def test_plotly_missing_raises_import_error(ntwk1: rf.Network, monkeypatch):
     with pytest.raises(ImportError, match=r"scikit-rf\[plotly\]"):
         ntwk1.plot_s_db(backend="plotly")
 
-@pytest.mark.parametrize("call", [
-    lambda n, ns: n.plot_it_all(),
-    lambda n, ns: ns.plot_uncertainty_bounds_s_db(),
-    lambda n, ns: ns.plot_violin("s_db"),
-], ids=["plot_it_all", "plot_uncertainty_bounds_s_db", "plot_violin"])
-def test_plotly_not_implemented_does_not_fall_back(ntwk1: rf.Network, ntwk_set_zip: NetworkSet, call):
+@needs_plotly
+def test_plotly_not_implemented_does_not_fall_back(ntwk_set_zip: NetworkSet):
     rf.options.plotting.backend = "plotly"
     with pytest.raises(NotImplementedError, match="plotly"):
-        call(ntwk1, ntwk_set_zip)
+        ntwk_set_zip.plot_violin("s_db", quantiles=[0.5])
 
 def test_matplotlib_unchanged_under_global_plotly(ntwk1: rf.Network, ntwk_set_zip: NetworkSet, mpl_axes):
     rf.options.plotting.backend = "plotly"
@@ -207,6 +207,7 @@ def test_matplotlib_unchanged_under_global_plotly(ntwk1: rf.Network, ntwk_set_zi
     assert ntwk1.plot_s_smith(ax=mpl_axes) is None
     assert ntwk1.plot_s_complex(0, 0, mpl_axes) is None
     assert ntwk_set_zip.plot_uncertainty_bounds_s_db(ax=mpl_axes) is None
+    assert ntwk_set_zip.plot_violin("s_db", ax=mpl_axes) is None
     assert len(mpl_axes.lines) > 0
     # matplotlib-only helpers ignore the global option
     n_lines = len(mpl_axes.lines)
@@ -222,7 +223,9 @@ def test_plotly_does_not_import_matplotlib():
     loaded = _modules_after(
         "import skrf as rf; rf.options.plotting.backend = 'plotly'; n = rf.data.ring_slot; "
         "n.plot_s_db(); n.plot_s_time_db(); n.frequency.plot(n.s_db); n.plot_passivity(); "
-        "n.plot_s_smith(); n.plot_s_polar(); n.plot_s_complex()")
+        "n.plot_s_smith(); n.plot_s_polar(); n.plot_s_complex(); n.plot_it_all(); "
+        "ns = rf.networkSet.NetworkSet([n, n]); ns.plot_uncertainty_bounds_s_db(); ns.plot_minmax_bounds_s_db(); "
+        "ns.plot_violin('s_db'); ns.plot_uncertainty_decomposition()")
     assert "plotly" in loaded
     assert "matplotlib" not in loaded
 
@@ -244,8 +247,9 @@ def test_plotly_generated_function_parity(ntwk1_dc: rf.Network, generated_functi
     lambda n, ns, **kw: n.frequency.plot(n.s_db, **kw),
     lambda n, ns, **kw: ns.plot_s_db(**kw),
     lambda n, ns, **kw: ns.plot_logsigma(**kw),
+    lambda n, ns, **kw: ns.plot_uncertainty_decomposition(**kw),
 ], ids=["plot_passivity", "plot_reciprocity2", "plot_s_error", "Frequency.plot", "NetworkSet.plot_s_db",
-        "plot_logsigma"])
+        "plot_logsigma", "plot_uncertainty_decomposition"])
 def test_plotly_rectangular_parity(ntwk1_dc: rf.Network, ntwk_set_zip: NetworkSet, call, mpl_axes):
     fig = call(ntwk1_dc, ntwk_set_zip, backend="plotly")
     call(ntwk1_dc, ntwk_set_zip, ax=mpl_axes)
@@ -340,3 +344,42 @@ def test_plotly_networkset_smith(ntwk1: rf.Network, ntwk_set_zip: NetworkSet):
     fig = ntwk_set_zip.plot_s_smith(backend="plotly")
     assert len(fig.data) - len(_smith_grid_traces(fig)) == sum(n.nports**2 for n in ntwk_set_zip)
     assert len(_smith_grid_traces(fig)) == len(_smith_grid_traces(ntwk1.plot_s_smith(backend="plotly")))
+
+@needs_plotly
+@pytest.mark.parametrize("method", ["plot_uncertainty_bounds_s_db", "plot_minmax_bounds_s_db",
+                                    "plot_uncertainty_bounds_s"])
+def test_plotly_bounds_parity(ntwk_set_zip: NetworkSet, method: str, mpl_axes):
+    fig = getattr(ntwk_set_zip, method)(backend="plotly")
+    getattr(ntwk_set_zip, method)(ax=mpl_axes)
+    means, fills = fig.data[::2], fig.data[1::2]
+    assert len(means) == len(mpl_axes.lines) == len(mpl_axes.collections)
+    for mean, fill, line, poly in zip(means, fills, mpl_axes.lines, mpl_axes.collections):
+        np.testing.assert_allclose(np.asarray(mean.x) * ntwk_set_zip[0].frequency.multiplier, line.get_xdata())
+        np.testing.assert_allclose(mean.y, line.get_ydata())
+        assert mean.name == line.get_label()
+        np.testing.assert_allclose(np.unique(fill.y), np.unique(poly.get_paths()[0].vertices[:, 1]))
+        assert (fill.fill, fill.fillcolor, fill.showlegend) == ("toself", mean.line.color, False)
+    assert fig.layout.yaxis.title.text == mpl_axes.get_ylabel()
+    assert getattr(ntwk_set_zip, method)(ax=fig) is fig
+    assert len(fig.data) == 4 * len(means)  # mean and fill traces added again
+
+@needs_plotly
+def test_plotly_violin(ntwk_set_zip: NetworkSet):
+    fig = ntwk_set_zip.plot_violin("s_db", m=0, n=1, backend="plotly")
+    freq = ntwk_set_zip[0].frequency
+    (trace,) = fig.data
+    assert trace.type == "violin"
+    np.testing.assert_allclose(trace.y, np.array([ntwk.s_db[:, 0, 1] for ntwk in ntwk_set_zip]).ravel())
+    np.testing.assert_allclose(trace.x, np.tile(freq.f_scaled, len(ntwk_set_zip)))
+    np.testing.assert_allclose(trace.width, 0.75 * (freq.f_scaled[1] - freq.f_scaled[0]))
+    assert (fig.layout.xaxis.title.text, fig.layout.yaxis.title.text) == (f"Frequency ({freq.unit})",
+                                                                          rf.Network.Y_LABEL_DICT["db"])
+
+@needs_plotly
+def test_plotly_plot_it_all(ntwk1_dc: rf.Network):
+    fig = ntwk1_dc.plot_it_all(backend="plotly")
+    data = [t for t in fig.data if t.meta != "skrf_smith_chart"]
+    assert len(data) == 4 * ntwk1_dc.nports**2
+    assert {t.xaxis for t in data} == {"x", "x2", "x3", "x4"}
+    assert (fig.layout.yaxis3.scaleanchor, fig.layout.yaxis4.scaleanchor) == ("x3", "x4")
+    assert [t.name for t in fig.data if t.showlegend] == [t.name for t in data if t.xaxis == "x"]

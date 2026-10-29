@@ -229,7 +229,6 @@ from .constants import (
     SparamFormatT,
 )
 from .frequency import Frequency
-from .plotting import _check_backend_supported
 from .time import get_window, time_gate
 from .util import copy_doc, find_nearest_index, get_extn, get_fid, partial_with_docs
 
@@ -5347,8 +5346,6 @@ class Network:
 
     @copy_doc(rfplt.plot_it_all)
     def plot_it_all(self, *args, **kwargs):
-        # plot_it_all calls the per-kind methods itself, so pin them to matplotlib
-        kwargs["backend"] = _check_backend_supported("Network.plot_it_all", kwargs.get("backend"))
         return rfplt.plot_it_all(self, *args, **kwargs)
 
     @copy_doc(rfplt.plot_prop_complex)

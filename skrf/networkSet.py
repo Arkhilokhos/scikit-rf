@@ -510,7 +510,7 @@ class NetworkSet:
 
         """
         def plot_func(self,*args, **kwargs):
-            self.plot_uncertainty_bounds_component(network_property_name, *args,**kwargs)
+            return self.plot_uncertainty_bounds_component(network_property_name, *args,**kwargs)
 
         setattr(self.__class__,'plot_uncertainty_bounds_'+\
                 network_property_name,plot_func)
@@ -534,7 +534,7 @@ class NetworkSet:
 
         """
         def plot_func(self,*args, **kwargs):
-            self.plot_minmax_bounds_component(network_property_name, *args,**kwargs)
+            return self.plot_minmax_bounds_component(network_property_name, *args,**kwargs)
 
         setattr(self.__class__,'plot_minmax_bounds_'+\
                 network_property_name,plot_func)
@@ -1443,40 +1443,35 @@ class NetworkSet:
 
     @copy_doc(skrf_plt.plot_uncertainty_bounds_component)
     def plot_uncertainty_bounds_component(self, *args, **kwargs):
-        skrf_plt._check_backend_supported("NetworkSet.plot_uncertainty_bounds_*", kwargs.pop("backend", None),
-                                          kwargs.get("ax"))
-        skrf_plt.plot_uncertainty_bounds_component(self, *args, **kwargs)
+        return skrf_plt.plot_uncertainty_bounds_component(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_minmax_bounds_component)
     def plot_minmax_bounds_component(self, *args, **kwargs):
-        skrf_plt._check_backend_supported("NetworkSet.plot_minmax_bounds_*", kwargs.pop("backend", None),
-                                          kwargs.get("ax"))
-        skrf_plt.plot_minmax_bounds_component(self, *args, **kwargs)
+        return skrf_plt.plot_minmax_bounds_component(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_uncertainty_bounds_s_db)
     def plot_uncertainty_bounds_s_db(self, *args, **kwargs):
-        skrf_plt.plot_uncertainty_bounds_s_db(self, *args, **kwargs)
+        return skrf_plt.plot_uncertainty_bounds_s_db(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_minmax_bounds_s_db)
     def plot_minmax_bounds_s_db(self, *args, **kwargs):
-        skrf_plt.plot_minmax_bounds_s_db(self, *args, **kwargs)
+        return skrf_plt.plot_minmax_bounds_s_db(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_minmax_bounds_s_db10)
     def plot_minmax_bounds_s_db10(self, *args, **kwargs):
-        skrf_plt.plot_minmax_bounds_s_db10(self, *args, **kwargs)
+        return skrf_plt.plot_minmax_bounds_s_db10(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_uncertainty_bounds_s_time_db)
     def plot_uncertainty_bounds_s_time_db(self, *args, **kwargs):
-        skrf_plt.plot_uncertainty_bounds_s_time_db(self, *args, **kwargs)
+        return skrf_plt.plot_uncertainty_bounds_s_time_db(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_minmax_bounds_s_time_db)
     def plot_minmax_bounds_s_time_db(self, *args, **kwargs):
-        skrf_plt.plot_minmax_bounds_s_time_db(self, *args, **kwargs)
+        return skrf_plt.plot_minmax_bounds_s_time_db(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_uncertainty_decomposition)
     def plot_uncertainty_decomposition(self, *args, **kwargs):
-        skrf_plt._check_backend_supported("NetworkSet.plot_uncertainty_decomposition", kwargs.pop("backend", None))
-        skrf_plt.plot_uncertainty_decomposition(self, *args, **kwargs)
+        return skrf_plt.plot_uncertainty_decomposition(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_logsigma)
     def plot_logsigma(self, *args, **kwargs):
@@ -1490,9 +1485,8 @@ class NetworkSet:
 
     @copy_doc(skrf_plt.plot_violin)
     def plot_violin(self, attribute, *args, **kwargs):
-        skrf_plt._check_backend_supported("NetworkSet.plot_violin", kwargs.pop("backend", None), kwargs.get("ax"))
         if "time" not in attribute:
-            skrf_plt.plot_violin(self, attribute, *args,**kwargs)
+            return skrf_plt.plot_violin(self, attribute, *args,**kwargs)
         else:
             raise NotImplementedError("Violin plots are not implemented for time based parameters")
 
