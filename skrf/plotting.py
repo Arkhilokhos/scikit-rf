@@ -43,7 +43,7 @@ plot methods also take a per-call ``backend=`` argument.
 With plotly they return a ``plotly.graph_objects.Figure``; pass it as ``ax``
 to add traces to it. Passing a matplotlib Axes as ``ax`` selects matplotlib.
 The convenience functions below, and the Calibration and VectorFitting
-plots, always use matplotlib. See the *Plotting Backends* example.
+plots, always use matplotlib.
 
 Convenience plotting functions
 -------------------------------
