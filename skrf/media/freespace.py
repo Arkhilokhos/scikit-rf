@@ -316,15 +316,15 @@ class Freespace(Media):
         """
         Plot the real and imaginary part of the complex permittivity.
         """
-        self.plot(self.ep_r.real, label=r'ep_r real')
-        self.plot(self.ep_r.imag, label=r'ep_r imag')
+        self.plot(self.ep_r.real, label=r'ep_r real', backend='matplotlib')
+        self.plot(self.ep_r.imag, label=r'ep_r imag', backend='matplotlib')
 
     def plot_mu(self):
         """
         Plot the real and imaginary part of the complex permeability.
         """
-        self.plot(self.mu_r.real, label=r'mu_r real')
-        self.plot(self.mu_r.imag, label=r'mu_r imag')
+        self.plot(self.mu_r.real, label=r'mu_r real', backend='matplotlib')
+        self.plot(self.mu_r.imag, label=r'mu_r imag', backend='matplotlib')
 
     def plot_ep_mu(self):
         """

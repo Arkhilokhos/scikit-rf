@@ -731,16 +731,27 @@ class Frequency:
 
         ax.set_xlabel(f'Frequency ({self.unit})')
 
-    @axes_kwarg
-    def plot(self, y: NumberLike, *args, ax: Axes=None, **kwargs):
+    def plot(self, y: NumberLike, *args, ax: Axes=None, backend: str | None = None, **kwargs):
         """
         Plot something vs this frequency.
 
         This plots whatever is given vs. `self.f_scaled` and then
-        calls `labelXAxis`.
+        calls `labelXAxis`. With the plotly `backend` (default
+        ``skrf.options.plotting.backend``), it draws on the plotly Figure
+        `ax`, or a new one, and returns it.
         """
 
-        from .plotting import scale_frequency_ticks
+        from .plotting import (
+            _get_axes,
+            _plotly_figure,
+            _plotly_frequency_x,
+            _plotly_rect,
+            _resolve_backend,
+            scale_frequency_ticks,
+        )
+
+        plotly = _resolve_backend(backend, ax) == 'plotly'
+        ax = _plotly_figure(ax) if plotly else _get_axes(ax)
 
         try:
             if len(np.shape(y)) > 2:
@@ -748,10 +759,12 @@ class Frequency:
                 y = y.squeeze()
                 if len(np.shape(y)) > 2:
                     # the dimensions are full, so lets loop and plot each
+                    # (matplotlib has always drawn these on the current axes)
                     for m in range(np.shape(y)[1]):
                         for n in range(np.shape(y)[2]):
-                            self.plot(y[:, m, n], *args, **kwargs)
-                    return
+                            self.plot(y[:, m, n], *args, ax=ax if plotly else None,
+                                      backend='plotly' if plotly else 'matplotlib', **kwargs)
+                    return ax if plotly else None
             if len(y) == len(self):
                 pass
             else:
@@ -760,6 +773,12 @@ class Frequency:
                                 ' number of points as f'])
         except(TypeError):
             y = y * np.ones(len(self))
+
+        if plotly:
+            x, x_label = _plotly_frequency_x(ax, self)
+            for column in np.reshape(y, (len(self), -1)).T:
+                _plotly_rect(x, column, *args, x_label=x_label, ax=ax, **kwargs)
+            return ax
 
         # plt.plot(self.f_scaled, y, *args, **kwargs)
         ax.plot(self.f, y, *args, **kwargs)

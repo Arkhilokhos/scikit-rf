@@ -143,7 +143,7 @@ from ..network import (
     zipfile,
 )
 from ..networkSet import NetworkSet
-from ..plotting import axes_kwarg
+from ..plotting import _matplotlib_only, axes_kwarg
 
 logger = getLogger(__name__)
 
@@ -1019,6 +1019,7 @@ class Calibration:
         """
 
 
+        _matplotlib_only("Calibration.plot_calibration_errors", kwargs)
         port_list = self.biased_error.port_tuples
         for m,n in port_list:
             ax.set_title(f"S{self.biased_error.ntwk_set[0]._fmt_trace_name(m,n)}")
@@ -1077,6 +1078,7 @@ class Calibration:
         Calibration.residual_networks
         """
 
+        _matplotlib_only("Calibration.plot_residuals", kwargs)
         NetworkSet(self.residual_ntwks).__getattribute__('plot_'+attr)(**kwargs)
 
 

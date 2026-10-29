@@ -456,6 +456,13 @@ class NetworkSet:
 
     def __add_a_element_wise_method(self, network_method_name: str):
         def func(self,  *args, **kwargs):
+            if network_method_name.startswith('plot_'):
+                kwargs['backend'] = skrf_plt._resolve_backend(kwargs.get('backend'), kwargs.get('ax'))
+                if kwargs['backend'] == 'plotly':
+                    # draw all networks on one figure, created by the first call unless ax is given
+                    for ntwk in self.ntwk_set:
+                        kwargs['ax'] = getattr(ntwk, network_method_name)(*args, **kwargs)
+                    return kwargs['ax']
             return self.element_wise_method(network_method_name, *args, **kwargs)
         setattr(self.__class__,network_method_name,func)
 
@@ -1436,10 +1443,14 @@ class NetworkSet:
 
     @copy_doc(skrf_plt.plot_uncertainty_bounds_component)
     def plot_uncertainty_bounds_component(self, *args, **kwargs):
+        skrf_plt._check_backend_supported("NetworkSet.plot_uncertainty_bounds_*", kwargs.pop("backend", None),
+                                          kwargs.get("ax"))
         skrf_plt.plot_uncertainty_bounds_component(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_minmax_bounds_component)
     def plot_minmax_bounds_component(self, *args, **kwargs):
+        skrf_plt._check_backend_supported("NetworkSet.plot_minmax_bounds_*", kwargs.pop("backend", None),
+                                          kwargs.get("ax"))
         skrf_plt.plot_minmax_bounds_component(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_uncertainty_bounds_s_db)
@@ -1464,18 +1475,22 @@ class NetworkSet:
 
     @copy_doc(skrf_plt.plot_uncertainty_decomposition)
     def plot_uncertainty_decomposition(self, *args, **kwargs):
+        skrf_plt._check_backend_supported("NetworkSet.plot_uncertainty_decomposition", kwargs.pop("backend", None))
         skrf_plt.plot_uncertainty_decomposition(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_logsigma)
     def plot_logsigma(self, *args, **kwargs):
-        skrf_plt.plot_logsigma(self, *args, **kwargs)
+        return skrf_plt.plot_logsigma(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.signature)
     def signature(self, *args, **kwargs):
+        skrf_plt._matplotlib_only("NetworkSet.signature", kwargs)
+        del kwargs["backend"]  # the remaining kwargs go to imshow
         skrf_plt.signature(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_violin)
     def plot_violin(self, attribute, *args, **kwargs):
+        skrf_plt._check_backend_supported("NetworkSet.plot_violin", kwargs.pop("backend", None), kwargs.get("ax"))
         if "time" not in attribute:
             skrf_plt.plot_violin(self, attribute, *args,**kwargs)
         else:

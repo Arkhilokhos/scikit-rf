@@ -33,6 +33,13 @@ Plots and Charts
 
     plot_contour
 
+Backend selection
+-----------------
+``skrf.plotting.options`` (also ``skrf.options``) holds the global plotting
+backend, ``options.plotting.backend``: ``"matplotlib"`` (default) or
+``"plotly"`` (needs ``pip install scikit-rf[plotly]``). The general-purpose
+plot methods also take a per-call ``backend=`` argument.
+
 Convenience plotting functions
 -------------------------------
 .. autosummary::
@@ -58,6 +65,7 @@ from contextlib import suppress
 from functools import wraps
 from logging import getLogger
 from numbers import Number
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -90,6 +98,87 @@ def plotting_available() -> bool:
     return result
 
 
+_PLOTTING_BACKENDS = ('matplotlib', 'plotly')
+
+
+def _validate_backend(backend: str) -> str:
+    if backend not in _PLOTTING_BACKENDS:
+        raise ValueError(f"Unknown plotting backend {backend!r}, choose one of {_PLOTTING_BACKENDS}")
+    return backend
+
+
+class _PlottingOptions:
+    """Plotting settings: `backend` is 'matplotlib' (default) or 'plotly'."""
+
+    def __init__(self):
+        self._backend = 'matplotlib'
+
+    @property
+    def backend(self) -> str:
+        return self._backend
+
+    @backend.setter
+    def backend(self, value: str):
+        self._backend = _validate_backend(value)
+
+
+# global settings, also available as skrf.options
+options = SimpleNamespace(plotting=_PlottingOptions())
+
+
+def _is_plotly_figure(ax) -> bool:
+    # checked by name so that plotly is not imported
+    return any(c.__module__.startswith('plotly.') and c.__name__ == 'Figure' for c in type(ax).__mro__)
+
+
+def _resolve_backend(backend: str | None = None, ax=None) -> str:
+    """
+    Backend for one plot call: `backend` if given, else the type of `ax`, else the global option.
+
+    Following `ax` keeps code that draws on its own matplotlib Axes working
+    when the global option is 'plotly'.
+    """
+    if backend is None:
+        if ax is None:
+            return options.plotting.backend
+        return 'plotly' if _is_plotly_figure(ax) else 'matplotlib'
+    if ax is not None and (_validate_backend(backend) == 'plotly') != _is_plotly_figure(ax):
+        raise TypeError(f"ax of type {type(ax).__name__} cannot be used with backend={backend!r}")
+    return _validate_backend(backend)
+
+
+def _import_plotly():
+    try:
+        import plotly.graph_objects as go
+    except ImportError as err:
+        raise ImportError("The plotly backend requires plotly: pip install scikit-rf[plotly]") from err
+    return go
+
+
+def _check_backend_supported(method_name: str, backend: str | None = None, ax=None) -> str:
+    """Raise NotImplementedError for a method that has no plotly implementation yet."""
+    backend = _resolve_backend(backend, ax)
+    if backend != 'matplotlib':
+        raise NotImplementedError(f"{method_name} is not implemented for the {backend!r} plotting backend")
+    return backend
+
+
+def _matplotlib_only(method_name: str, kwargs: dict):
+    """Keep a matplotlib-only helper, and the plot methods it forwards `kwargs` to, on matplotlib."""
+    if _validate_backend(kwargs.get('backend', 'matplotlib')) != 'matplotlib':
+        raise NotImplementedError(f"{method_name} only supports the matplotlib plotting backend")
+    kwargs['backend'] = 'matplotlib'
+
+
+def _get_axes(ax: Axes | None = None) -> Axes:
+    """Return `ax`, or the current matplotlib axes if it is None."""
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as err:
+        raise RuntimeError("Plotting is not available") from err
+    return plt.gca() if ax is None else ax
+
+
 def axes_kwarg(func):
     """
     This decorator checks if a :class:`matplotlib.axes.Axes` object is passed,
@@ -103,14 +192,7 @@ def axes_kwarg(func):
 
     @wraps(func)
     def wrapper(*args, **kwargs):
-        try:
-            import matplotlib.pyplot as plt
-            ax = kwargs.pop('ax', None)
-            if ax is None:
-                ax = plt.gca()
-        except ImportError as err:
-            raise RuntimeError("Plotting is not available") from err
-        func(*args, ax=ax, **kwargs)
+        func(*args, ax=_get_axes(kwargs.pop('ax', None)), **kwargs)
 
     return wrapper
 
@@ -149,14 +231,16 @@ def subplots(*args, **kwargs) -> tuple[Figure, np.ndarray]:
         raise RuntimeError("Plotting is not available") from err
 
 
-def _get_label_str(netw: Network, param: str, m: int, n: int) -> str:
-    import matplotlib.pyplot as plt
+def _get_label_str(netw: Network, param: str, m: int, n: int, usetex: bool | None = None) -> str:
+    if usetex is None:
+        import matplotlib.pyplot as plt
+        usetex = plt.rcParams['text.usetex']
 
     label_string = ""
     if netw.name is not None:
         label_string += f"{netw.name}, "
 
-    if plt.rcParams['text.usetex']:
+    if usetex:
         label_string += f"${param}_{{{netw._fmt_trace_name(m,n)}}}$"
     else:
         label_string += f"{param}{netw._fmt_trace_name(m,n)}"
@@ -476,6 +560,91 @@ def plot_rectangular(x: NumberLike, y: NumberLike,
         plt.draw()
 
     return my_plot
+
+
+# plotly counterparts of the matplotlib plotting functions above. They only draw
+# data that scikit-rf has already computed, and import plotly when called.
+
+# common matplotlib line keywords and their plotly equivalents
+_PLOTLY_ALIASES = {'c': 'color', 'ls': 'linestyle', 'lw': 'linewidth', 'ms': 'markersize'}
+_PLOTLY_COLORS = {'b': 'blue', 'g': 'green', 'r': 'red', 'c': 'cyan', 'm': 'magenta', 'y': 'yellow',
+                  'k': 'black', 'w': 'white'}
+_PLOTLY_LINESTYLES = {'-': 'solid', '--': 'dash', ':': 'dot', '-.': 'dashdot', 'dashed': 'dash', 'dotted': 'dot'}
+_PLOTLY_MARKERS = {'o': 'circle', '.': 'circle', 's': 'square', 'd': 'diamond', '+': 'cross',
+                   '^': 'triangle-up', 'v': 'triangle-down', '*': 'star'}
+_PLOTLY_NONE = ('', ' ', 'none', 'None')
+
+
+def _plotly_figure(ax=None):
+    """Return the plotly Figure `ax`, or a new Figure if it is None."""
+    go = _import_plotly()
+    if ax is None:
+        return go.Figure()
+    if not isinstance(ax, go.Figure):
+        raise TypeError(f"the plotly backend needs a plotly Figure as ax, not {type(ax).__name__}")
+    return ax
+
+
+def _plotly_kwargs(args: tuple, kwargs: dict) -> dict:
+    """Translate common matplotlib line keywords for go.Scatter; other keywords are passed on."""
+    if args:
+        raise TypeError(f"Positional matplotlib format arguments {args!r} are not supported by the plotly "
+                        "backend, use keywords such as color=, linestyle= or marker=")
+    kw = {_PLOTLY_ALIASES.get(k, k): v for k, v in kwargs.items()}
+    color, linestyle, marker = kw.pop('color', None), kw.pop('linestyle', None), kw.pop('marker', None)
+    line = dict(kw.pop('line', {}))
+    markers = dict(marker) if isinstance(marker, dict) else {}  # a plotly marker dict is passed on
+    if color is not None:
+        line['color'] = markers['color'] = _PLOTLY_COLORS.get(color, color)
+    if linestyle not in _PLOTLY_NONE + (None,):
+        line['dash'] = _PLOTLY_LINESTYLES.get(linestyle, linestyle)
+    if 'linewidth' in kw:
+        line['width'] = kw.pop('linewidth')
+    if isinstance(marker, str) and marker not in _PLOTLY_NONE:
+        markers['symbol'] = _PLOTLY_MARKERS.get(marker, marker)
+    if 'markersize' in kw:
+        markers['size'] = kw.pop('markersize')
+    if 'alpha' in kw:
+        kw['opacity'] = kw.pop('alpha')
+    if 'label' in kw:
+        kw['name'] = str(kw.pop('label'))
+    mode = [] if linestyle in _PLOTLY_NONE else ['lines']
+    if 'symbol' in markers:
+        mode.append('markers')
+    kw.setdefault('mode', '+'.join(mode) or 'none')
+    return {**kw, 'line': line, 'marker': markers}
+
+
+def _plotly_frequency_x(fig, frequency: Frequency) -> tuple[np.ndarray, str]:
+    """
+    Frequency values and x-axis label for a trace on `fig`.
+
+    All traces use the unit of the first one, which is kept in ``fig.layout.meta``.
+    """
+    meta = fig.layout.meta if isinstance(fig.layout.meta, dict) else {}
+    unit = meta.get('skrf_frequency_unit')
+    if unit is None:
+        unit = frequency.unit
+        if fig.layout.meta is None or isinstance(fig.layout.meta, dict):  # leave other user metadata alone
+            fig.update_layout(meta={**meta, 'skrf_frequency_unit': unit})
+    return frequency.f / frequency.multiplier_dict[unit.lower()], f'Frequency ({unit})'
+
+
+def _plotly_rect(x: NumberLike, y: NumberLike, *args,
+                 x_label: str | None = None, y_label: str | None = None,
+                 title: str | None = None, show_legend: bool = True,
+                 axis: str = 'tight', ax=None, **kwargs):
+    """plotly counterpart of :func:`plot_rectangular`, drawing on the plotly Figure `ax`."""
+    trace = _plotly_kwargs(args, kwargs)
+    trace.setdefault('showlegend', bool(show_legend and 'name' in trace))
+    ax.add_trace(_import_plotly().Scatter(x=x, y=y, **trace))
+    if x_label is not None:
+        ax.update_xaxes(title_text=x_label)
+    if y_label is not None:
+        ax.update_yaxes(title_text=y_label)
+    if title is not None:
+        ax.update_layout(title_text=title)
+    return ax
 
 
 def plot_polar(theta: NumberLike, r: NumberLike,
@@ -987,6 +1156,14 @@ def colors() -> list[str]:
     return [c['color'] for c in plt.rcParams['axes.prop_cycle']]
 
 
+def _start_plot(backend: str | None, kwargs: dict) -> str:
+    """Resolve `backend`; with plotly, put the figure to draw on in ``kwargs['ax']``."""
+    backend = _resolve_backend(backend, kwargs.get("ax"))
+    if backend == "plotly":
+        kwargs["ax"] = _plotly_figure(kwargs.get("ax"))
+    return backend
+
+
 ## specific plotting functions
 def plot(netw: Network, *args, **kw):
     """
@@ -995,7 +1172,7 @@ def plot(netw: Network, *args, **kw):
     return netw.frequency.plot(*args, **kw)
 
 
-def plot_passivity(netw: Network, port=None, label_prefix=None, **kwargs):
+def plot_passivity(netw: Network, port=None, label_prefix=None, *, backend: str | None = None, **kwargs):
     """
     Plot dB(diag(passivity metric)) vs frequency.
 
@@ -1009,7 +1186,9 @@ def plot_passivity(netw: Network, port=None, label_prefix=None, **kwargs):
     --------
     passivity
     """
-    import matplotlib.pyplot as plt
+    backend = _start_plot(backend, kwargs)
+    if backend == "matplotlib":
+        import matplotlib.pyplot as plt
 
     name = '' if netw.name is None else netw.name
 
@@ -1023,15 +1202,17 @@ def plot_passivity(netw: Network, port=None, label_prefix=None, **kwargs):
         else:
             label = label_prefix + ', port %i' % (k + 1)
         netw.frequency.plot(mf.complex_2_db(netw.passivity[:, k, k]),
-                            label=label,
+                            label=label, backend=backend,
                             **kwargs)
 
+    if backend == "plotly":
+        return kwargs["ax"]
     plt.legend()
     if plt.isinteractive():
         plt.draw()
 
 
-def plot_reciprocity(netw: Network, db=False, *args, **kwargs):
+def plot_reciprocity(netw: Network, db=False, *args, backend: str | None = None, **kwargs):
     """
     Plot reciprocity metric.
 
@@ -1039,7 +1220,9 @@ def plot_reciprocity(netw: Network, db=False, *args, **kwargs):
     --------
     reciprocity
     """
-    import matplotlib.pyplot as plt
+    backend = _start_plot(backend, kwargs)
+    if backend == "matplotlib":
+        import matplotlib.pyplot as plt
 
     for m in range(netw.nports):
         for n in range(netw.nports):
@@ -1048,14 +1231,16 @@ def plot_reciprocity(netw: Network, db=False, *args, **kwargs):
                     kwargs['label'] = f"ports {netw._fmt_trace_name(m, n)}"
                 y = netw.reciprocity[:, m, n].flatten()
                 y = mf.complex_2_db(y) if db else np.abs(y)
-                netw.frequency.plot(y, *args, **kwargs)
+                netw.frequency.plot(y, *args, backend=backend, **kwargs)
 
+    if backend == "plotly":
+        return kwargs["ax"]
     plt.legend()
     if plt.isinteractive():
         plt.draw()
 
 
-def plot_reciprocity2(netw: Network, db=False, *args, **kwargs):
+def plot_reciprocity2(netw: Network, db=False, *args, backend: str | None = None, **kwargs):
     """
     Plot reciprocity metric #2.
 
@@ -1072,7 +1257,9 @@ def plot_reciprocity2(netw: Network, db=False, *args, **kwargs):
     --------
     reciprocity
     """
-    import matplotlib.pyplot as plt
+    backend = _start_plot(backend, kwargs)
+    if backend == "matplotlib":
+        import matplotlib.pyplot as plt
 
     for m in range(netw.nports):
         for n in range(netw.nports):
@@ -1082,8 +1269,10 @@ def plot_reciprocity2(netw: Network, db=False, *args, **kwargs):
                 y = netw.reciprocity2[:, m, n].flatten()
                 if db:
                     y = mf.complex_2_db(y)
-                netw.frequency.plot(y, *args, **kwargs)
+                netw.frequency.plot(y, *args, backend=backend, **kwargs)
 
+    if backend == "plotly":
+        return kwargs["ax"]
     plt.legend()
     if plt.isinteractive():
         plt.draw()
@@ -1091,7 +1280,7 @@ def plot_reciprocity2(netw: Network, db=False, *args, **kwargs):
 
 def plot_s_error(netw: Network, other: Network,
                  error_function: ErrorFunctionsT = "average_l2_norm",
-                 db: bool = False, *args, **kwargs):
+                 db: bool = False, *args, backend: str | None = None, **kwargs):
     r"""
     Plot the s-parameter error between two networks vs frequency.
 
@@ -1107,15 +1296,23 @@ def plot_s_error(netw: Network, other: Network,
         or ``average_normalized_l1_norm``. Default is ``average_l2_norm``.
     db : bool
         If True, plot :math:`20\log_{10}(\delta)`. Default is False.
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.options.plotting.backend``
     \*args, \*\*kwargs :
         Passed to :meth:`~skrf.frequency.Frequency.plot`.
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
     See Also
     --------
     skrf.network.s_error
     skrf.network.Network.s_error
     """
-    import matplotlib.pyplot as plt
+    backend = _start_plot(backend, kwargs)
+    if backend == "matplotlib":
+        import matplotlib.pyplot as plt
 
     error = netw.s_error(other, error_function=error_function)
     if db:
@@ -1127,8 +1324,11 @@ def plot_s_error(netw: Network, other: Network,
     if 'label' not in kwargs:
         kwargs['label'] = f"{name_a} vs {name_b} ({error_function})"
 
-    netw.frequency.plot(error, *args, **kwargs)
+    netw.frequency.plot(error, *args, backend=backend, **kwargs)
 
+    if backend == "plotly":
+        kwargs["ax"].update_yaxes(title_text=f"{'dB ' if db else ''}s-parameter error ({error_function})")
+        return kwargs["ax"]
     plt.ylabel(f"{'dB ' if db else ''}s-parameter error ({error_function})")
     plt.legend()
     if plt.isinteractive():
@@ -1346,6 +1546,7 @@ def animate(self: NetworkSet, attr: str = 's_deg', ylims: tuple = (-5, 5),
     >>> ns.animate('s_deg', ylims=(-5,5), label=None)
 
     """
+    _matplotlib_only("NetworkSet.animate", kwargs)
     import matplotlib.pyplot as plt
 
     was_interactive = plt.isinteractive()
@@ -1737,13 +1938,13 @@ def plot_uncertainty_decomposition(self: NetworkSet, m: int = 0, n: int = 0):
     import matplotlib.pyplot as plt
     if self.name is not None:
         plt.title(f"Uncertainty Decomposition: {self.name} $S_{{{self.ntwk_set[0]._fmt.trace_name(m,n)}}}$")
-    self.std_s.plot_s_mag(label='Distance', m=m,n=n)
-    self.std_s_re.plot_s_mag(label='Real',  m=m,n=n)
-    self.std_s_im.plot_s_mag(label='Imaginary',  m=m,n=n)
-    self.std_s_mag.plot_s_mag(label='Magnitude',  m=m,n=n)
-    self.std_s_arcl.plot_s_mag(label='Arc-length',  m=m,n=n)
+    self.std_s.plot_s_mag(label='Distance', m=m,n=n, backend='matplotlib')
+    self.std_s_re.plot_s_mag(label='Real',  m=m,n=n, backend='matplotlib')
+    self.std_s_im.plot_s_mag(label='Imaginary',  m=m,n=n, backend='matplotlib')
+    self.std_s_mag.plot_s_mag(label='Magnitude',  m=m,n=n, backend='matplotlib')
+    self.std_s_arcl.plot_s_mag(label='Arc-length',  m=m,n=n, backend='matplotlib')
 
-def plot_logsigma(self: NetworkSet, label_axis: bool = True, *args,**kwargs):
+def plot_logsigma(self: NetworkSet, label_axis: bool = True, *args, backend: str | None = None, **kwargs):
     r"""
     Plot the uncertainty for the set in units of log-sigma.
 
@@ -1754,12 +1955,24 @@ def plot_logsigma(self: NetworkSet, label_axis: bool = True, *args,**kwargs):
     ----------
     label_axis : bool, optional
         Default is True.
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.options.plotting.backend``
     \*args, \*\*kwargs : arguments
         passed to self.std_s.plot_s_db()
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
     """
+    if _resolve_backend(backend, kwargs.get("ax")) == "plotly":
+        fig = self.std_s.plot_s_db(*args, backend="plotly", **kwargs)
+        if label_axis:
+            fig.update_yaxes(title_text='Standard Deviation(dB)')
+        return fig
+
     import matplotlib.pyplot as plt
 
-    self.std_s.plot_s_db(*args,**kwargs)
+    self.std_s.plot_s_db(*args, backend="matplotlib", **kwargs)
     if label_axis:
         plt.ylabel('Standard Deviation(dB)')
 

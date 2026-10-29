@@ -229,7 +229,7 @@ from .constants import (
     SparamFormatT,
 )
 from .frequency import Frequency
-from .plotting import axes_kwarg
+from .plotting import _check_backend_supported
 from .time import get_window, time_gate
 from .util import copy_doc, find_nearest_index, get_extn, get_fid, partial_with_docs
 
@@ -5182,8 +5182,15 @@ class Network:
         the y-axis label
     logx : Boolean, optional
         Enable logarithmic x-axis, default off
+    backend : {{'matplotlib', 'plotly'}}, optional
+        plotting backend, default ``skrf.options.plotting.backend``.
+        With plotly, `ax` may be a plotly Figure to add the traces to.
     \**kwargs : arguments, keyword arguments
-        passed to :func:`matplotlib.plot`
+        passed to :func:`matplotlib.plot` (or :class:`plotly.graph_objects.Scatter`)
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
     Note
     ----
@@ -5197,7 +5204,6 @@ class Network:
 
     """
 
-    @axes_kwarg
     def plot_attribute(     self,
                             attribute: PrimaryPropertiesT,
                             conversion: ComponentFuncT,
@@ -5206,7 +5212,11 @@ class Network:
                             ax: Axes=None,
                             show_legend=True,
                             y_label=None,
-                            logx=False, **kwargs):
+                            logx=False, backend=None, **kwargs):
+
+        plotly = rfplt._resolve_backend(backend, ax) == 'plotly'
+        ax = rfplt._plotly_figure(ax) if plotly else rfplt._get_axes(ax)
+        plot_rect = rfplt._plotly_rect if plotly else rfplt.plot_rectangular
 
         # create y_label if not provided
         if y_label is None:
@@ -5249,15 +5259,16 @@ class Network:
                 # name if it exists, and they didn't pass a name key in
                 # the kwargs
                 if gen_label:
-                    kwargs['label'] = rfplt._get_label_str(self, attribute[0].upper(), m, n)
+                    kwargs['label'] = rfplt._get_label_str(self, attribute[0].upper(), m, n,
+                                                           usetex=False if plotly else None)
 
                 if conversion in ["time_impulse", "time_step"]:
-                    rfplt.plot_rectangular(x=x * 1e9,
-                                        y=y[:, m, n],
-                                        x_label=xlabel,
-                                        y_label=y_label,
-                                        show_legend=show_legend, ax=ax,
-                                        **kwargs)
+                    plot_rect(x=x * 1e9,
+                              y=y[:, m, n],
+                              x_label=xlabel,
+                              y_label=y_label,
+                              show_legend=show_legend, ax=ax,
+                              **kwargs)
 
                 else:
                     # plot the desired attribute vs frequency
@@ -5274,20 +5285,28 @@ class Network:
                         x = self.frequency.f  # always plot f, and then scale the ticks instead
                         y = self.attribute(attribute, conversion)[:, m, n]
 
-                        # scale the ticklabels according to the frequency unit and set log-scale if desired:
-                        if logx:
-                            ax.set_xscale('log')
+                        if plotly:
+                            # plotly has no tick formatter, so plot f in the figure's frequency unit
+                            x, xlabel = rfplt._plotly_frequency_x(ax, self.frequency)
+                            if logx:
+                                ax.update_xaxes(type='log')
+                        else:
+                            # scale the ticklabels according to the frequency unit and set log-scale if desired:
+                            if logx:
+                                ax.set_xscale('log')
 
-                        rfplt.scale_frequency_ticks(ax, self.frequency.unit)
+                            rfplt.scale_frequency_ticks(ax, self.frequency.unit)
 
 
 
-                    rfplt.plot_rectangular(x=x,
-                                        y=y,
-                                        x_label=xlabel,
-                                        y_label=y_label,
-                                        show_legend=show_legend, ax=ax,
-                                        **kwargs)
+                    plot_rect(x=x,
+                              y=y,
+                              x_label=xlabel,
+                              y_label=y_label,
+                              show_legend=show_legend, ax=ax,
+                              **kwargs)
+
+        return ax if plotly else None
 
     plot_attribute.__doc__ = _plot_attribute_doc.format(
         attribute="conversion",
@@ -5323,20 +5342,25 @@ class Network:
     @copy_doc(rfplt.plot_s_smith)
     def plot_s_smith(self, m=None, n=None,r=1, ax=None, show_legend=True,\
         chart_type='z', draw_labels=False, label_axes=False, draw_vswr=None, *args,**kwargs):
+        _check_backend_supported("Network.plot_s_smith", kwargs.pop("backend", None), ax)
         return rfplt.plot_s_smith(self, m, n, r, ax, show_legend, chart_type,
                             draw_labels, label_axes, draw_vswr, *args, **kwargs)
 
     @copy_doc(rfplt.plot_it_all)
     def plot_it_all(self, *args, **kwargs):
+        # plot_it_all calls the per-kind methods itself, so pin them to matplotlib
+        kwargs["backend"] = _check_backend_supported("Network.plot_it_all", kwargs.get("backend"))
         return rfplt.plot_it_all(self, *args, **kwargs)
 
     @copy_doc(rfplt.plot_prop_complex)
-    def plot_prop_complex(self, *args, **kwargs):
-        return rfplt.plot_prop_complex(self, *args, **kwargs)
+    def plot_prop_complex(self, prop_name, m=None, n=None, ax=None, *args, backend=None, **kwargs):
+        _check_backend_supported(f"Network.plot_{prop_name}_complex", backend, ax)
+        return rfplt.plot_prop_complex(self, prop_name, m, n, ax, *args, **kwargs)
 
     @copy_doc(rfplt.plot_prop_polar)
-    def plot_prop_polar(self, *args, **kwargs):
-        return rfplt.plot_prop_polar(self, *args, **kwargs)
+    def plot_prop_polar(self, prop_name, m=None, n=None, ax=None, *args, backend=None, **kwargs):
+        _check_backend_supported(f"Network.plot_{prop_name}_polar", backend, ax)
+        return rfplt.plot_prop_polar(self, prop_name, m, n, ax, *args, **kwargs)
 
     def _fmt_trace_name(self, m: int, n: int) -> str:
         port_sep = "_" if self.nports > 9 else ""
