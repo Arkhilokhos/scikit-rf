@@ -300,6 +300,7 @@ def test_plotly_complex_parity(ntwk1_dc: rf.Network, primary_properties: str, mp
     assert len(fig.data) == ntwk1_dc.nports**2
     assert_plotly_parity(fig, mpl_axes)
     assert (fig.layout.xaxis.title.text, fig.layout.yaxis.scaleanchor) == ("Real", "x")
+    assert (fig.layout.xaxis.constrain, fig.layout.yaxis.constrain) == ("domain", "domain")
 
 @needs_plotly
 def test_plotly_polar(ntwk1_dc: rf.Network, primary_properties: str):
@@ -326,6 +327,9 @@ def test_plotly_smith(ntwk1_dc: rf.Network, chart_type: str):
     assert np.nanmax(np.abs(grid_points)) <= r * (1 + 1e-9)
     assert ("whitesmoke" in [t.line.color for t in grid]) == (chart_type in ("zy", "yz"))
     np.testing.assert_allclose(fig.layout.xaxis.range, [-1.1 * r, 1.1 * r])
+    assert (fig.layout.xaxis.constrain, fig.layout.yaxis.constrain) == ("domain", "domain")
+    assert (fig.layout.width, fig.layout.height) == (700, 550)
+    assert ntwk1_dc.plot_s_smith(ax=go.Figure(layout_height=300), backend="plotly").layout.width is None
     assert (fig.layout.xaxis.title.text, fig.layout.yaxis.title.text) == ("Real", "Imaginary")
 
 @needs_plotly

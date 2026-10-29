@@ -681,7 +681,9 @@ def _plotly_complex(z: NumberLike, x_label: str = 'Real', y_label: str = 'Imag',
     """plotly counterpart of :func:`plot_complex_rectangular`, with equal axis scales."""
     _plotly_rect(np.real(z), np.imag(z), x_label=x_label, y_label=y_label, title=title,
                  show_legend=show_legend, ax=ax, **kwargs)
-    return ax.update_yaxes(scaleanchor='x', scaleratio=1)
+    # shrink the plot area rather than widen the range, so it fits the data and zoom boxes match the drag
+    ax.update_xaxes(constrain='domain')
+    return ax.update_yaxes(scaleanchor='x', scaleratio=1, constrain='domain')
 
 
 def _plotly_complex_polar(z: NumberLike, x_label: str | None = None, y_label: str | None = None,
@@ -736,10 +738,14 @@ def _plotly_smith(smithR: Number = 1, chart_type: str = 'z', draw_labels: bool =
         ax.add_annotation(x=x, y=y, text=text.replace(r'$\infty$', '∞'), showarrow=False,
                           xanchor=ha, yanchor=_PLOTLY_ANCHORS.get(va, va), font_color=kw.get('color'))
 
-    ax.update_xaxes(range=[-1.1 * smithR, 1.1 * smithR], showgrid=False, zeroline=False, showticklabels=False)
+    ax.update_xaxes(range=[-1.1 * smithR, 1.1 * smithR], showgrid=False, zeroline=False, showticklabels=False,
+                    constrain='domain')
     ax.update_yaxes(range=[-1.1 * smithR, 1.1 * smithR], showgrid=False, zeroline=False, showticklabels=False,
-                    scaleanchor='x', scaleratio=1)
+                    scaleanchor='x', scaleratio=1, constrain='domain')
     ax.update_layout(plot_bgcolor='white')
+    if ax.layout.width is None and ax.layout.height is None:
+        # a compact default size, as a notebook stretches the figure across the cell around a square chart
+        ax.update_layout(width=700, height=550, margin=dict(l=20, r=20, t=30, b=20))
     return ax
 
 
