@@ -267,6 +267,12 @@ def test_plotly_figure_overlay_and_units(ntwk1: rf.Network):
     assert fig.layout.xaxis.title.text == f"Frequency ({ntwk1.frequency.unit})"
 
 @needs_plotly
+def test_plotly_logx(ntwk1: rf.Network, mpl_axes):
+    assert ntwk1.plot_s_db(0, 0, logx=True, backend="plotly").layout.xaxis.type == "log"
+    ntwk1.plot_s_db(0, 0, logx=True, ax=mpl_axes)
+    assert mpl_axes.get_xscale() == "log"
+
+@needs_plotly
 def test_plotly_errors(ntwk1: rf.Network, mpl_axes):
     with pytest.raises(TypeError, match="Positional"):
         ntwk1.frequency.plot(ntwk1.s_db[:, 0, 0], "r--", backend="plotly")
