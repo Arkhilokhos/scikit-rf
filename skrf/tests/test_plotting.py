@@ -301,6 +301,10 @@ def test_plotly_complex_parity(ntwk1_dc: rf.Network, primary_properties: str, mp
     assert_plotly_parity(fig, mpl_axes)
     assert (fig.layout.xaxis.title.text, fig.layout.yaxis.scaleanchor) == ("Real", "x")
     assert (fig.layout.xaxis.constrain, fig.layout.yaxis.constrain) == ("domain", "domain")
+    assert (fig.layout.width, fig.layout.height) == (700, 500)
+    z = getattr(ntwk1_dc, primary_properties)
+    np.testing.assert_allclose(fig.layout.yaxis.range, [z.imag.min() - 0.05 * np.ptp(z.imag),
+                                                        z.imag.max() + 0.05 * np.ptp(z.imag)])
 
 @needs_plotly
 def test_plotly_polar(ntwk1_dc: rf.Network, primary_properties: str):
@@ -339,6 +343,13 @@ def test_plotly_smith_labels(ntwk1_dc: rf.Network):
     assert {"∞", "0.0", "1.0", "1.0j", "2", "5"} <= set(texts)
     assert ntwk1_dc.plot_s_smith(draw_labels=True, chart_type="y", backend="plotly").layout.annotations[0].text \
         == "5.0"  # admittance labels, as matplotlib
+
+@needs_plotly
+def test_plotly_smith_grid(mpl_axes):
+    fig = rf.plotting.smith(draw_labels=True, ref_imm=50.0, backend="plotly")
+    rf.plotting.smith(draw_labels=True, ref_imm=50.0, ax=mpl_axes)
+    assert len(_smith_grid_traces(fig)) > 0 and not [t for t in fig.data if t.meta != "skrf_smith_chart"]
+    assert [a.text for a in fig.layout.annotations] == [t.get_text().replace(r"$\infty$", "∞") for t in mpl_axes.texts]
 
 @needs_plotly
 @pytest.mark.parametrize("kind", ["complex", "polar", "smith"])

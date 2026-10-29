@@ -273,10 +273,9 @@ def scale_frequency_ticks(ax: Axes, funit: str):
     ticks_x = ticker.FuncFormatter(lambda x, pos: f'{x * scale:g}')
     ax.xaxis.set_major_formatter(ticks_x)
 
-@axes_kwarg
 def smith(smithR: Number = 1, chart_type: str = 'z', draw_labels: bool = False,
           border: bool = False, ax: Axes | None = None, ref_imm: float = 1.0,
-          draw_vswr: list | bool | None = None):
+          draw_vswr: list | bool | None = None, backend: str | None = None):
     """
     Plot the Smith chart of a given radius.
 
@@ -314,12 +313,24 @@ def smith(smithR: Number = 1, chart_type: str = 'z', draw_labels: bool = False,
     draw_vswr : list of numbers, Boolean or None, optional
         draw VSWR circles. If True, default values are used.
         Default is None.
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.options.plotting.backend``.
+        `border` is not used with plotly.
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
     References
     ----------
     .. [#] https://en.wikipedia.org/wiki/Smith_chart
 
     """
+    if _resolve_backend(backend, ax) == 'plotly':
+        return _plotly_smith(smithR, chart_type, draw_labels, ax=_plotly_figure(ax, **_PLOTLY_SMITH_LAYOUT),
+                             ref_imm=ref_imm, draw_vswr=draw_vswr)
+    ax = _get_axes(ax)
+
     from matplotlib.patches import Circle
 
     colors = dict(superlight=dict(ec='whitesmoke', fc='none'), verylight=dict(ec='lightgrey', fc='none'),
@@ -574,6 +585,9 @@ def plot_rectangular(x: NumberLike, y: NumberLike,
 # plotly counterparts of the matplotlib plotting functions above. They only draw
 # data that scikit-rf has already computed, and import plotly when called.
 
+# fixed size of a new figure, as a notebook otherwise stretches a plotly figure across the whole cell,
+# with less room above the plot than plotly's default
+_PLOTLY_SIZE = dict(width=700, height=500, margin_t=60)
 # common matplotlib line keywords and their plotly equivalents
 _PLOTLY_ALIASES = {'c': 'color', 'ls': 'linestyle', 'lw': 'linewidth', 'ms': 'markersize'}
 _PLOTLY_COLORS = {'b': 'blue', 'g': 'green', 'r': 'red', 'c': 'cyan', 'm': 'magenta', 'y': 'yellow',
@@ -584,11 +598,11 @@ _PLOTLY_MARKERS = {'o': 'circle', '.': 'circle', 's': 'square', 'd': 'diamond', 
 _PLOTLY_NONE = ('', ' ', 'none', 'None')
 
 
-def _plotly_figure(ax=None):
-    """Return the plotly Figure `ax`, or a new Figure if it is None."""
+def _plotly_figure(ax=None, **layout):
+    """Return the plotly Figure `ax`, or a new Figure of the default size and `layout` if it is None."""
     go = _import_plotly()
     if ax is None:
-        return go.Figure()
+        return go.Figure(layout={**_PLOTLY_SIZE, **layout})
     if not isinstance(ax, go.Figure):
         raise TypeError(f"the plotly backend needs a plotly Figure as ax, not {type(ax).__name__}")
     return ax
@@ -681,6 +695,11 @@ def _plotly_complex(z: NumberLike, x_label: str = 'Real', y_label: str = 'Imag',
     """plotly counterpart of :func:`plot_complex_rectangular`, with equal axis scales."""
     _plotly_rect(np.real(z), np.imag(z), x_label=x_label, y_label=y_label, title=title,
                  show_legend=show_legend, ax=ax, **kwargs)
+    # pad the range of all traces by 5% like matplotlib, as plotly's autorange fits lines tightly
+    for update, values in ((ax.update_xaxes, [t.x for t in ax.data]), (ax.update_yaxes, [t.y for t in ax.data])):
+        values = np.concatenate([np.asarray(v, dtype=float) for v in values if v is not None])
+        lo, hi = np.nanmin(values), np.nanmax(values)
+        update(range=[lo - 0.05 * (hi - lo), hi + 0.05 * (hi - lo)])
     # shrink the plot area rather than widen the range, so it fits the data and zoom boxes match the drag
     ax.update_xaxes(constrain='domain')
     return ax.update_yaxes(scaleanchor='x', scaleratio=1, constrain='domain')
@@ -705,6 +724,7 @@ def _plotly_complex_polar(z: NumberLike, x_label: str | None = None, y_label: st
 
 
 _PLOTLY_SMITH_COLORS = dict(superlight='whitesmoke', verylight='lightgrey', light='grey', heavy='black')
+_PLOTLY_SMITH_LAYOUT = dict(height=550, margin=dict(l=20, r=20, t=30, b=20))  # a new figure around a square chart
 _PLOTLY_ANCHORS = {'baseline': 'bottom', 'center': 'middle'}
 
 
@@ -743,9 +763,6 @@ def _plotly_smith(smithR: Number = 1, chart_type: str = 'z', draw_labels: bool =
     ax.update_yaxes(range=[-1.1 * smithR, 1.1 * smithR], showgrid=False, zeroline=False, showticklabels=False,
                     scaleanchor='x', scaleratio=1, constrain='domain')
     ax.update_layout(plot_bgcolor='white')
-    if ax.layout.width is None and ax.layout.height is None:
-        # a compact default size, as a notebook stretches the figure across the cell around a square chart
-        ax.update_layout(width=700, height=550, margin=dict(l=20, r=20, t=30, b=20))
     return ax
 
 
@@ -1503,7 +1520,7 @@ def plot_s_smith(netw: Network, m=None, n=None,r=1, ax=None, show_legend=True,\
 
     plotly = _resolve_backend(backend, ax) == 'plotly'
     if plotly:
-        ax = _plotly_figure(ax)
+        ax = _plotly_figure(ax, **_PLOTLY_SMITH_LAYOUT)
     else:
         # get current axis if user doesn't supply and axis
         import matplotlib.pyplot as plt
@@ -1598,7 +1615,7 @@ def plot_it_all(netw: Network, *args, **kwargs):
         _import_plotly()
         from plotly.subplots import make_subplots
 
-        fig = make_subplots(rows=2, cols=2)
+        fig = make_subplots(rows=2, cols=2).update_layout(_PLOTLY_SIZE)
         for i, method in enumerate([netw.plot_s_db, netw.plot_s_deg, netw.plot_s_smith, netw.plot_s_complex]):
             sub, row, col, xaxis = method(*args, **kwargs), i // 2 + 1, i % 2 + 1, f"x{i + 1 if i else ''}"
             for trace in sub.data:  # one legend for all panels
