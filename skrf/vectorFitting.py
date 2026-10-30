@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 from .network import Network
 from .networkSet import NetworkSet
-from .plotting import axes_kwarg
+from .plotting import _get_axes, _import_plotly, _plotly_figure, _plotly_rect, _resolve_backend
 
 logger = logging.getLogger(__name__)
 
@@ -2046,9 +2046,8 @@ class VectorFitting:
                 resp += residues[i] / (s - pole) + np.conjugate(residues[i]) / (s - np.conjugate(pole))
         return resp
 
-    @axes_kwarg
     def plot(self, component: str, i: int = -1, j: int = -1, freqs: Any = None,
-             parameter: str = 's', *, ax: Axes = None) -> Axes:
+             parameter: str = 's', *, ax: Axes = None, backend: str | None = None) -> Axes:
         """
         Plots the specified component of the parameter :math:`H_{i+1,j+1}` in the fit, where :math:`H` is
         either the scattering (:math:`S`), the impedance (:math:`Z`), or the admittance (:math:`H`) response specified
@@ -2081,14 +2080,18 @@ class VectorFitting:
             in :attr:`network` that is used for comparison with the fit. Must be one of the following items unless
             :attr:`network` is `None`: ['s', 'z', 'y'] for *scattering* (default), *impedance*, or *admittance*.
 
-        ax : :class:`matplotlib.Axes` object or None
-            matplotlib axes to draw on. If None, the current axes is fetched with :func:`gca()`.
+        ax : :class:`matplotlib.Axes` object, plotly Figure or None
+            axes to draw on. If None, the current matplotlib axes is fetched with :func:`gca()`, or a new plotly
+            Figure is created with the plotly backend.
+
+        backend : {'matplotlib', 'plotly'}, optional
+            plotting backend, default ``skrf.plotting.options.backend``.
 
         Returns
         -------
         :class:`matplotlib.Axes`
             matplotlib axes used for drawing. Either the passed :attr:`ax` argument or the one fetch from the current
-            figure.
+            figure. With the plotly backend, the plotly Figure.
 
         Raises
         ------
@@ -2096,6 +2099,9 @@ class VectorFitting:
             If the `freqs` parameter is not specified while the Network in :attr:`network` is `None`.
             Also if `component` and/or `parameter` are not valid.
         """
+
+        plotly = _resolve_backend(backend, ax) == 'plotly'
+        ax = _plotly_figure(ax) if plotly else _get_axes(ax)
 
         components = ['db', 'mag', 'deg', 'deg_unwrap', 're', 'im']
         if component.lower() in components:
@@ -2153,7 +2159,11 @@ class VectorFitting:
                         elif component.lower() == 'im':
                             y_vals = np.imag(responses[:, i, j])
 
-                        ax.scatter(self.network.f, y_vals, color='r', label=label)
+                        if plotly:
+                            _plotly_rect(self.network.f, y_vals, ax=ax, color='r', marker='o', linestyle='none',
+                                         **({} if label == '_nolegend_' else {'label': label}))
+                        else:
+                            ax.scatter(self.network.f, y_vals, color='r', label=label)
 
                 if freqs is None:
                     # get frequency array from the network
@@ -2196,15 +2206,25 @@ class VectorFitting:
                         y_vals = np.imag(y_model)
                         y_label = 'Imaginary Part'
 
-                    ax.plot(freqs, y_vals, color='k', label=label)
+                    if plotly:
+                        _plotly_rect(freqs, y_vals, ax=ax, color='k',
+                                     **({} if label == '_nolegend_' else {'label': label}))
+                    else:
+                        ax.plot(freqs, y_vals, color='k', label=label)
+
+            # only print title if a single response is shown
+            title = f'Response i={i}, j={j}' if i_fit == 1 else None
+            if plotly:
+                if title is not None:
+                    ax.update_layout(title_text=title)
+                return ax.update_layout(xaxis_title='Frequency (Hz)', yaxis_title=y_label)
 
             ax.set_xlabel('Frequency (Hz)')
             ax.set_ylabel(y_label)
             ax.legend(loc='best')
 
-            # only print title if a single response is shown
-            if i_fit == 1:
-                ax.set_title(f'Response i={i}, j={j}')
+            if title is not None:
+                ax.set_title(title)
 
             return ax
         else:
@@ -2226,7 +2246,7 @@ class VectorFitting:
         -------
         :class:`matplotlib.Axes`
             matplotlib axes used for drawing. Either the passed :attr:`ax` argument or the one fetch from the current
-            figure.
+            figure. With the plotly backend, the plotly Figure.
 
         Notes
         -----
@@ -2251,7 +2271,7 @@ class VectorFitting:
         -------
         :class:`matplotlib.Axes`
             matplotlib axes used for drawing. Either the passed :attr:`ax` argument or the one fetch from the current
-            figure.
+            figure. With the plotly backend, the plotly Figure.
 
         Notes
         -----
@@ -2276,7 +2296,7 @@ class VectorFitting:
         -------
         :class:`matplotlib.Axes`
             matplotlib axes used for drawing. Either the passed :attr:`ax` argument or the one fetch from the current
-            figure.
+            figure. With the plotly backend, the plotly Figure.
 
         Notes
         -----
@@ -2301,7 +2321,7 @@ class VectorFitting:
         -------
         :class:`matplotlib.Axes`
             matplotlib axes used for drawing. Either the passed :attr:`ax` argument or the one fetch from the current
-            figure.
+            figure. With the plotly backend, the plotly Figure.
 
         Notes
         -----
@@ -2326,7 +2346,7 @@ class VectorFitting:
         -------
         :class:`matplotlib.Axes`
             matplotlib axes used for drawing. Either the passed :attr:`ax` argument or the one fetch from the current
-            figure.
+            figure. With the plotly backend, the plotly Figure.
 
         Notes
         -----
@@ -2351,7 +2371,7 @@ class VectorFitting:
         -------
         :class:`matplotlib.Axes`
             matplotlib axes used for drawing. Either the passed :attr:`ax` argument or the one fetch from the current
-            figure.
+            figure. With the plotly backend, the plotly Figure.
 
         Notes
         -----
@@ -2360,8 +2380,7 @@ class VectorFitting:
 
         return self.plot('im', *args, **kwargs)
 
-    @axes_kwarg
-    def plot_s_singular(self, freqs: Any = None, *, ax: Axes = None) -> Axes:
+    def plot_s_singular(self, freqs: Any = None, *, ax: Axes = None, backend: str | None = None) -> Axes:
         """
         Plots the singular values of the vector fitted S-matrix in linear scale.
 
@@ -2371,20 +2390,27 @@ class VectorFitting:
             List of frequencies for the response plot. If None, the sample frequencies of the fitted network in
             :attr:`network` are used. This only works if :attr:`network` is not `None`.
 
-        ax : :class:`matplotlib.Axes` object or None
-            matplotlib axes to draw on. If None, the current axes is fetched with :func:`gca()`.
+        ax : :class:`matplotlib.Axes` object, plotly Figure or None
+            axes to draw on. If None, the current matplotlib axes is fetched with :func:`gca()`, or a new plotly
+            Figure is created with the plotly backend.
+
+        backend : {'matplotlib', 'plotly'}, optional
+            plotting backend, default ``skrf.plotting.options.backend``.
 
         Returns
         -------
         :class:`matplotlib.Axes`
             matplotlib axes used for drawing. Either the passed :attr:`ax` argument or the one fetch from the current
-            figure.
+            figure. With the plotly backend, the plotly Figure.
 
         Raises
         ------
         ValueError
             If the `freqs` parameter is not specified while the Network in :attr:`network` is `None`.
         """
+
+        plotly = _resolve_backend(backend, ax) == 'plotly'
+        ax = _plotly_figure(ax) if plotly else _get_axes(ax)
 
         if freqs is None:
             if self.network is None:
@@ -2404,14 +2430,19 @@ class VectorFitting:
 
         # plot the frequency response of each singular value
         for n in range(n_ports):
-            ax.plot(freqs, sigma[:, n], label=fr'$\sigma_{n + 1}$')
+            if plotly:
+                _plotly_rect(freqs, sigma[:, n], ax=ax, label=f'σ{n + 1}', x_label='Frequency (Hz)',
+                             y_label='Magnitude')
+            else:
+                ax.plot(freqs, sigma[:, n], label=fr'$\sigma_{n + 1}$')
+        if plotly:
+            return ax
         ax.set_xlabel('Frequency (Hz)')
         ax.set_ylabel('Magnitude')
         ax.legend(loc='best')
         return ax
 
-    @axes_kwarg
-    def plot_convergence(self, ax: Axes = None) -> Axes:
+    def plot_convergence(self, ax: Axes = None, backend: str | None = None) -> Axes:
         """
         Plots the history of the model residue parameter **d_res** during the iterative pole relocation process of the
         vector fitting, which should eventually converge to a fixed value. Additionally, the relative change of the
@@ -2419,16 +2450,32 @@ class VectorFitting:
 
         Parameters
         ----------
-        ax : :class:`matplotlib.Axes` object or None
-            matplotlib axes to draw on. If None, the current axes is fetched with :func:`gca()`.
+        ax : :class:`matplotlib.Axes` object, plotly Figure or None
+            axes to draw on. If None, the current matplotlib axes is fetched with :func:`gca()`, or a new plotly
+            Figure is created with the plotly backend.
+
+        backend : {'matplotlib', 'plotly'}, optional
+            plotting backend, default ``skrf.plotting.options.backend``.
 
         Returns
         -------
         :class:`matplotlib.Axes`
             matplotlib axes used for drawing. Either the passed :attr:`ax` argument or the one fetch from the current
-            figure.
+            figure. With the plotly backend, the plotly Figure.
         """
 
+        if _resolve_backend(backend, ax) == 'plotly':
+            ax = _plotly_figure(ax)
+            _plotly_rect(np.arange(len(self.delta_max_history)) + 1, self.delta_max_history, ax=ax, color='darkblue',
+                         x_label='Iteration step')
+            # the residue on a second y-axis, like twinx()
+            ax.add_trace(_import_plotly().Scatter(x=np.arange(len(self.d_res_history)) + 1, y=self.d_res_history,
+                                                  mode='lines', line_color='orangered', yaxis='y2', showlegend=False))
+            return ax.update_layout(
+                yaxis=dict(type='log', title_text='Max. relative change', title_font_color='darkblue'),
+                yaxis2=dict(overlaying='y', side='right', title_text='Residue', title_font_color='orangered'))
+
+        ax = _get_axes(ax)
         ax.semilogy(np.arange(len(self.delta_max_history)) + 1, self.delta_max_history, color='darkblue')
         ax.set_xlabel('Iteration step')
         ax.set_ylabel('Max. relative change', color='darkblue')
@@ -2437,8 +2484,7 @@ class VectorFitting:
         ax2.set_ylabel('Residue', color='orangered')
         return ax
 
-    @axes_kwarg
-    def plot_passivation(self, ax: Axes = None) -> Axes:
+    def plot_passivation(self, ax: Axes = None, backend: str | None = None) -> Axes:
         """
         Plots the history of the greatest singular value during the iterative passivity enforcement process, which
         should eventually converge to a value slightly lower than 1.0 or stop after reaching the maximum number of
@@ -2446,16 +2492,25 @@ class VectorFitting:
 
         Parameters
         ----------
-        ax : :class:`matplotlib.Axes` object or None
-            matplotlib axes to draw on. If None, the current axes is fetched with :func:`gca()`.
+        ax : :class:`matplotlib.Axes` object, plotly Figure or None
+            axes to draw on. If None, the current matplotlib axes is fetched with :func:`gca()`, or a new plotly
+            Figure is created with the plotly backend.
+
+        backend : {'matplotlib', 'plotly'}, optional
+            plotting backend, default ``skrf.plotting.options.backend``.
 
         Returns
         -------
         :class:`matplotlib.Axes`
             matplotlib axes used for drawing. Either the passed :attr:`ax` argument or the one fetch from the current
-            figure.
+            figure. With the plotly backend, the plotly Figure.
         """
 
+        if _resolve_backend(backend, ax) == 'plotly':
+            return _plotly_rect(np.arange(len(self.history_max_sigma)) + 1, self.history_max_sigma,
+                                ax=_plotly_figure(ax), x_label='Iteration step', y_label='Max. singular value')
+
+        ax = _get_axes(ax)
         ax.plot(np.arange(len(self.history_max_sigma)) + 1, self.history_max_sigma)
         ax.set_xlabel('Iteration step')
         ax.set_ylabel('Max. singular value')

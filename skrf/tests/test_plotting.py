@@ -570,3 +570,52 @@ def test_plotly_animate(ntwk_set_zip: NetworkSet, monkeypatch):
 def test_animate_matplotlib(ntwk_set_zip: NetworkSet, mpl_axes):
     assert ntwk_set_zip.animate("s_db", show=False) is None
     assert len(mpl_axes.figure.axes[0].lines) == 4  # the last Network
+
+@pytest.fixture(scope="module")
+def vector_fit():
+    vf = rf.vectorFitting.VectorFitting(rf.data.ring_slot)
+    with pytest.warns(UserWarning, match="not passive"):
+        vf.vector_fit(n_poles_real=2, n_poles_cmplx=0)
+    return vf
+
+@needs_plotly
+@pytest.mark.parametrize("component", ["db", "mag", "deg", "deg_unwrap", "re", "im"])
+def test_plotly_vector_fitting(vector_fit, component: str, mpl_axes):
+    fig = vector_fit.plot(component, backend="plotly")
+    assert vector_fit.plot(component, ax=mpl_axes) is mpl_axes
+    samples, fits = fig.data[:4], fig.data[4:]
+    for trace, points in zip(samples, mpl_axes.collections):
+        assert (trace.mode, trace.marker.color) == ("markers", "red")
+        np.testing.assert_allclose(np.column_stack([trace.x, trace.y]), points.get_offsets())
+    assert_plotly_parity(go.Figure(fits, layout=fig.layout), mpl_axes)
+    assert [t.name for t in fig.data if t.showlegend] == ["Samples", "Fit"]
+    assert fig.layout.xaxis.title.text == mpl_axes.get_xlabel()
+    assert vector_fit.plot(component, 0, 1, backend="plotly").layout.title.text == "Response i=0, j=1"
+
+@needs_plotly
+def test_plotly_vector_fitting_plots(vector_fit, mpl_axes):
+    fig = vector_fit.plot_s_singular(backend="plotly")
+    vector_fit.plot_s_singular(ax=mpl_axes)
+    for trace, line in zip(fig.data, mpl_axes.lines, strict=True):
+        np.testing.assert_allclose(np.column_stack([trace.x, trace.y]), line.get_xydata())
+    assert [t.name for t in fig.data] == ["σ1", "σ2"]
+    fig = vector_fit.plot_convergence(backend="plotly")
+    np.testing.assert_allclose(fig.data[0].y, vector_fit.delta_max_history)
+    np.testing.assert_allclose(fig.data[1].y, vector_fit.d_res_history)
+    assert (fig.data[1].yaxis, fig.layout.yaxis.type, fig.layout.yaxis2.overlaying) == ("y2", "log", "y")
+    assert (fig.layout.yaxis.title.text, fig.layout.yaxis2.title.text) == ("Max. relative change", "Residue")
+    vf = rf.vectorFitting.VectorFitting(None)
+    vf.poles = np.array([-1, -5 + 6j])
+    vf.residues = np.array([[0.3, 4 + 5j], [0.1, 2 + 3j], [0.1, 2 + 3j], [0.4, 3 + 4j]])
+    vf.constant_coeff = np.array([0.2, 0.1, 0.1, 0.3])
+    vf.proportional_coeff = np.zeros(4)
+    vf.passivity_enforce(f_max=2)
+    fig = vf.plot_passivation(backend="plotly")
+    vf.plot_passivation(ax=mpl_axes.figure.add_subplot(2, 1, 2))
+    np.testing.assert_allclose(fig.data[0].y, vf.history_max_sigma)
+    assert fig.layout.yaxis.title.text == "Max. singular value"
+    # the backend comes from the global option, never from ax
+    rf.plotting.options.backend = "plotly"
+    assert isinstance(vector_fit.plot_s_db(), go.Figure)
+    with pytest.raises(TypeError, match="cannot be used with backend='plotly'"):
+        vector_fit.plot_s_db(ax=mpl_axes)
