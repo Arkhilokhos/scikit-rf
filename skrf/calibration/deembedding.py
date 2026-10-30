@@ -1584,15 +1584,15 @@ class IEEEP370_FER:
 
         ax = fig.add_subplot(2, 2, 1)
         ax.set_title('FER1 2x-Thru IL')
-        s2xthru.plot_s_db(1, 0, ax = ax, color = '0.5')
-        s2xthru.plot_s_db(0, 1, ax = ax, color = 'k')
+        s2xthru.plot_s_db(1, 0, ax = ax, color = '0.5', backend = 'matplotlib')
+        s2xthru.plot_s_db(0, 1, ax = ax, color = 'k', backend = 'matplotlib')
         self.plot_limit_fer1(s2xthru.frequency, ax)
         ax.legend(loc = 'lower left')
 
         ax = fig.add_subplot(2, 2, 2)
         ax.set_title('FER2 2x-Thru RL')
-        s2xthru.plot_s_db(0, 0, ax = ax, color = '0.5')
-        s2xthru.plot_s_db(1, 1, ax = ax, color = 'k')
+        s2xthru.plot_s_db(0, 0, ax = ax, color = '0.5', backend = 'matplotlib')
+        s2xthru.plot_s_db(1, 1, ax = ax, color = 'k', backend = 'matplotlib')
         self.plot_limit_fer2(s2xthru.frequency, ax)
         ax.legend(loc = 'lower left')
 
@@ -1624,15 +1624,15 @@ class IEEEP370_FER:
 
         ax = fig.add_subplot(2, 2, 1)
         ax.set_title('FER1 2x-Thru IL')
-        mm_2xthru.plot_s_db(1, 0, ax = ax, color = '0.5')
-        mm_2xthru.plot_s_db(0, 1, ax = ax, color = 'k')
+        mm_2xthru.plot_s_db(1, 0, ax = ax, color = '0.5', backend = 'matplotlib')
+        mm_2xthru.plot_s_db(0, 1, ax = ax, color = 'k', backend = 'matplotlib')
         self.plot_limit_fer1(mm_2xthru.frequency, ax)
         ax.legend(loc = 'lower left')
 
         ax = fig.add_subplot(2, 2, 2)
         ax.set_title('FER2 2x-Thru RL')
-        mm_2xthru.plot_s_db(0, 0, ax = ax, color = '0.5')
-        mm_2xthru.plot_s_db(1, 1, ax = ax, color = 'k')
+        mm_2xthru.plot_s_db(0, 0, ax = ax, color = '0.5', backend = 'matplotlib')
+        mm_2xthru.plot_s_db(1, 1, ax = ax, color = 'k', backend = 'matplotlib')
         self.plot_limit_fer2(mm_2xthru.frequency, ax)
         ax.legend(loc = 'lower left')
 
@@ -1680,8 +1680,8 @@ class IEEEP370_FER:
 
         ax = fig.add_subplot(2, 2, 1)
         ax.set_title('FER5 TDR Z variation side 1')
-        sfix_dut_fix_dc.plot_z_time_step(0, 0, color = 'k', ax = ax)
-        s2xthru_dc.plot_z_time_step(0, 0, color = 'k', linestyle = 'dashed', ax = ax)
+        sfix_dut_fix_dc.plot_z_time_step(0, 0, color = 'k', ax = ax, backend = 'matplotlib')
+        s2xthru_dc.plot_z_time_step(0, 0, color = 'k', linestyle = 'dashed', ax = ax, backend = 'matplotlib')
         x = ax.lines[-1].get_xdata()[:(x_k + n//2 + 1)]
         y = ax.lines[-1].get_ydata()[:(x_k + n//2 + 1)]
         self.plot_limit_fer5(x, y, ax)
@@ -1697,8 +1697,8 @@ class IEEEP370_FER:
 
         ax = fig.add_subplot(2, 2, 2)
         ax.set_title('FER5 TDR Z variation side 2')
-        sfix_dut_fix_dc.plot_z_time_step(1, 1, color = 'k', ax = ax)
-        s2xthru_dc.plot_z_time_step(1, 1, color = 'k', linestyle = 'dashed', ax = ax)
+        sfix_dut_fix_dc.plot_z_time_step(1, 1, color = 'k', ax = ax, backend = 'matplotlib')
+        s2xthru_dc.plot_z_time_step(1, 1, color = 'k', linestyle = 'dashed', ax = ax, backend = 'matplotlib')
         x = ax.lines[-1].get_xdata()[:(x_k + n//2 + 1)]
         y = ax.lines[-1].get_ydata()[:(x_k + n//2 + 1)]
         self.plot_limit_fer5(x, y, ax)
@@ -1714,8 +1714,8 @@ class IEEEP370_FER:
 
         ax = fig.add_subplot(2, 1, 2)
         ax.set_title('FER8 TDT minimum length')
-        s2xthru_dc.plot_z_time_impulse(1, 0, color = '0.5', ax = ax)
-        s2xthru_dc.plot_z_time_impulse(1, 0, color = 'k', ax = ax)
+        s2xthru_dc.plot_z_time_impulse(1, 0, color = '0.5', ax = ax, backend = 'matplotlib')
+        s2xthru_dc.plot_z_time_impulse(1, 0, color = 'k', ax = ax, backend = 'matplotlib')
         y = ax.lines[-1].get_ydata()
         y_lim = [np.min(y), np.max(y)]
         t_lim = [3.0e9 / f[-1], 3.0e9 / f[-1]]
@@ -1754,8 +1754,8 @@ class IEEEP370_FER:
 
         ax = fig.add_subplot(2, 2, 1)
         ax.set_title('FER5 TDR Z variation side 1')
-        mm_fix_dut_fix_dc.plot_z_time_step(0, 0, color = 'k', ax = ax)
-        mm_2xthru_dc.plot_z_time_step(0, 0, color = 'k', linestyle = 'dashed', ax = ax)
+        mm_fix_dut_fix_dc.plot_z_time_step(0, 0, color = 'k', ax = ax, backend = 'matplotlib')
+        mm_2xthru_dc.plot_z_time_step(0, 0, color = 'k', linestyle = 'dashed', ax = ax, backend = 'matplotlib')
         x = ax.lines[-1].get_xdata()[:(x_k + n//2 + 1)]
         y = ax.lines[-1].get_ydata()[:(x_k + n//2 + 1)]
         self.plot_limit_fer5(x, y, ax)
@@ -1771,8 +1771,8 @@ class IEEEP370_FER:
 
         ax = fig.add_subplot(2, 2, 2)
         ax.set_title('FER5 TDR Z variation side 2')
-        mm_fix_dut_fix_dc.plot_z_time_step(1, 1, color = 'k', ax = ax)
-        mm_2xthru_dc.plot_z_time_step(1, 1, color = 'k', linestyle = 'dashed', ax = ax)
+        mm_fix_dut_fix_dc.plot_z_time_step(1, 1, color = 'k', ax = ax, backend = 'matplotlib')
+        mm_2xthru_dc.plot_z_time_step(1, 1, color = 'k', linestyle = 'dashed', ax = ax, backend = 'matplotlib')
         x = ax.lines[-1].get_xdata()[:(x_k + n//2 + 1)]
         y = ax.lines[-1].get_ydata()[:(x_k + n//2 + 1)]
         self.plot_limit_fer5(x, y, ax)
@@ -1788,15 +1788,15 @@ class IEEEP370_FER:
 
         ax = fig.add_subplot(2, 2, 3)
         ax.set_title('FER7 TDT skew')
-        se_2xthru_dc.plot_z_time_impulse(2, 0, color = '0.5', ax = ax)
-        se_2xthru_dc.plot_z_time_impulse(3, 1, color = 'k', ax = ax)
+        se_2xthru_dc.plot_z_time_impulse(2, 0, color = '0.5', ax = ax, backend = 'matplotlib')
+        se_2xthru_dc.plot_z_time_impulse(3, 1, color = 'k', ax = ax, backend = 'matplotlib')
         ax.legend(loc = 'upper right')
         ax.set_xlim((-1, x_t + 1))
 
         ax = fig.add_subplot(2, 2, 4)
         ax.set_title('FER8 TDT minimum length')
-        mm_2xthru_dc.plot_z_time_impulse(1, 0, color = '0.5', ax = ax)
-        mm_2xthru_dc.plot_z_time_impulse(1, 0, color = 'k', ax = ax)
+        mm_2xthru_dc.plot_z_time_impulse(1, 0, color = '0.5', ax = ax, backend = 'matplotlib')
+        mm_2xthru_dc.plot_z_time_impulse(1, 0, color = 'k', ax = ax, backend = 'matplotlib')
         y = ax.lines[-1].get_ydata()
         y_lim = [np.min(y), np.max(y)]
         t_lim = [3.0e9 / f[-1], 3.0e9 / f[-1]]
@@ -2003,7 +2003,7 @@ class IEEEP370_FD_QM:
             fig.suptitle('Initial checking in the frequency domain')
             ax = fig.add_subplot(1, 3, 1, projection = 'polar')
             ax.set_title('Causality')
-            ntwk.plot_s_polar(ax = ax)
+            ntwk.plot_s_polar(ax = ax, backend = 'matplotlib')
             ax.legend(loc = 'upper right')
             ax = fig.add_subplot(1, 3, 2)
             ax.set_title('Passivity')
@@ -2796,21 +2796,21 @@ class IEEEP370_TD_QM:
             ax.set_title('Extrapolation')
             self.ntwk_interpolated.frequency.unit = ntwk.frequency.unit
             # avoid log(0) issues with zero padding
-            ntwk.plot_s_db(1, 0, color = 'r', ax = ax, label = 'Original, S21')
+            ntwk.plot_s_db(1, 0, color = 'r', ax = ax, label = 'Original, S21', backend = 'matplotlib')
             if self.extrapolation == 2:
                 nz_k = np.nonzero(self.ntwk_interpolated.s[:, 1, 0])[0]
                 self.ntwk_interpolated[:nz_k[-1]].plot_s_db(1, 0, color = 'b',
                                             linestyle = 'dashed', ax = ax,
-                                            label = 'Extrapolated, S21')
+                                            label = 'Extrapolated, S21', backend = 'matplotlib')
             else:
                 self.ntwk_interpolated.plot_s_db(1, 0, color = 'b',
                                                  linestyle = 'dashed', ax = ax,
-                                                 label = 'Extrapolated, S21')
+                                                 label = 'Extrapolated, S21', backend = 'matplotlib')
             secax = ax.twinx()
-            ntwk.plot_s_deg(1, 0, color = 'm', ax = secax, label = 'Original, S21')
+            ntwk.plot_s_deg(1, 0, color = 'm', ax = secax, label = 'Original, S21', backend = 'matplotlib')
             self.ntwk_interpolated.plot_s_deg(1, 0, color = 'c',
                                               linestyle = 'dashed', ax = secax,
-                                              label = 'Extrapolated, S21')
+                                              label = 'Extrapolated, S21', backend = 'matplotlib')
             ax.legend(loc = 'upper left')
             secax.legend(loc = 'lower right')
             fig.tight_layout()
@@ -3422,8 +3422,8 @@ class IEEEP370_SE_NZC_2xThru(IEEEP370):
         fig.suptitle('Consistency test #1: Self de-embedding of 2X-Thru')
 
         ax[0].set_title('Magnitude residuals')
-        res.plot_s_db(1,0, ax = ax[0], color = '0.5')
-        res.plot_s_db(0,1, ax = ax[0], color = 'k')
+        res.plot_s_db(1,0, ax = ax[0], color = '0.5', backend = 'matplotlib')
+        res.plot_s_db(0,1, ax = ax[0], color = 'k', backend = 'matplotlib')
         ax[0].plot([res.frequency.f_scaled[0], res.frequency.f_scaled[-1]],
                        [0.1, 0.1],
                        linestyle = 'dashed', color = 'r', label = 'Limit')
@@ -3433,8 +3433,8 @@ class IEEEP370_SE_NZC_2xThru(IEEEP370):
         ax[0].legend(loc = 'upper right')
 
         ax[1].set_title('Phase residuals')
-        res.plot_s_deg(1,0, ax = ax[1], color = '0.5')
-        res.plot_s_deg(0,1, ax = ax[1], color = 'k')
+        res.plot_s_deg(1,0, ax = ax[1], color = '0.5', backend = 'matplotlib')
+        res.plot_s_deg(0,1, ax = ax[1], color = 'k', backend = 'matplotlib')
         ax[1].plot([res.frequency.f_scaled[0], res.frequency.f_scaled[-1]],
                        [1, 1],
                        linestyle = 'dashed', color = 'r', label = 'Limit')
@@ -3465,13 +3465,13 @@ class IEEEP370_SE_NZC_2xThru(IEEEP370):
         fig.suptitle('Consistency test #2: Compare the TDR of the fixture model to the FIX-DUT-FIX')
         ax[0].set_title('Side 1')
         fix1.plot_z_time_step(0, 0, window = window,
-                              ax = ax[0], color = 'k')
+                              ax = ax[0], color = 'k', backend = 'matplotlib')
         s2xthru.plot_z_time_step(0, 0, window = window,
-                                 ax = ax[0], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[0], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         y = ax[0].lines[-1].get_ydata()
         if fix_dut_fix is not None:
             fix_dut_fix.plot_z_time_step(0, 0, window = window,
-                                     ax = ax[0], linestyle = 'dashed', color = 'm')
+                                     ax = ax[0], linestyle = 'dashed', color = 'm', backend = 'matplotlib')
         ax[0].plot([0], [y[n // 2]], marker = 's', color = 'k', label = 'start')
         ax[0].plot([(self.x_end - (n // 2) - 1) * dt], [self.z_x], marker = 'o',
                    color = 'k', label = f'z_x = {self.z_x:0.1f} ohm')
@@ -3485,13 +3485,13 @@ class IEEEP370_SE_NZC_2xThru(IEEEP370):
 
         ax[1].set_title('Side 2')
         fix2.plot_z_time_step(0, 0, window = window,
-                              ax = ax[1], color = 'k')
+                              ax = ax[1], color = 'k', backend = 'matplotlib')
         s2xthru.plot_z_time_step(1, 1, window = window,
-                                 ax = ax[1], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[1], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         y = ax[1].lines[-1].get_ydata()
         if fix_dut_fix is not None:
             fix_dut_fix.plot_z_time_step(1, 1, window = window,
-                                     ax = ax[1], linestyle = 'dashed', color = 'm')
+                                     ax = ax[1], linestyle = 'dashed', color = 'm', backend = 'matplotlib')
         ax[1].plot([0], [y[n // 2]], marker = 's', color = 'k', label = 'start')
         ax[1].plot([(self.x_end - (n // 2) - 1) * dt], [self.z_x], marker = 'o',
                    color = 'k', label = f'z_x = {self.z_x:0.1f} ohm')
@@ -3800,10 +3800,10 @@ class IEEEP370_MM_NZC_2xThru(IEEEP370):
         fig.suptitle('Consistency test #1: Self de-embedding of 2X-Thru')
 
         ax[0].set_title('Magnitude residuals')
-        res.plot_s_db(1,0, ax = ax[0])
-        res.plot_s_db(0,1, ax = ax[0])
-        res.plot_s_db(3,2, ax = ax[0])
-        res.plot_s_db(2,3, ax = ax[0])
+        res.plot_s_db(1,0, ax = ax[0], backend = 'matplotlib')
+        res.plot_s_db(0,1, ax = ax[0], backend = 'matplotlib')
+        res.plot_s_db(3,2, ax = ax[0], backend = 'matplotlib')
+        res.plot_s_db(2,3, ax = ax[0], backend = 'matplotlib')
         ax[0].plot([res.frequency.f_scaled[0], res.frequency.f_scaled[-1]],
                        [0.1, 0.1],
                        linestyle = 'dashed', color = 'r', label = 'Limit')
@@ -3813,10 +3813,10 @@ class IEEEP370_MM_NZC_2xThru(IEEEP370):
         ax[0].legend(loc = 'upper right')
 
         ax[1].set_title('Phase residuals')
-        res.plot_s_deg(1,0, ax = ax[1])
-        res.plot_s_deg(0,1, ax = ax[1])
-        res.plot_s_deg(3,2, ax = ax[1])
-        res.plot_s_deg(2,3, ax = ax[1])
+        res.plot_s_deg(1,0, ax = ax[1], backend = 'matplotlib')
+        res.plot_s_deg(0,1, ax = ax[1], backend = 'matplotlib')
+        res.plot_s_deg(3,2, ax = ax[1], backend = 'matplotlib')
+        res.plot_s_deg(2,3, ax = ax[1], backend = 'matplotlib')
         ax[1].plot([res.frequency.f_scaled[0], res.frequency.f_scaled[-1]],
                        [1, 1],
                        linestyle = 'dashed', color = 'r', label = 'Limit')
@@ -3855,44 +3855,44 @@ class IEEEP370_MM_NZC_2xThru(IEEEP370):
         fig.suptitle('Consistency test #2: Compare the TDR of the fixture model to the FIX-DUT-FIX')
         ax[0].set_title('Side 1')
         fix1.plot_z_time_step(0, 0, window = window,
-                              ax = ax[0], color = 'k')
+                              ax = ax[0], color = 'k', backend = 'matplotlib')
         s2xthru.plot_z_time_step(0, 0, window = window,
-                                 ax = ax[0], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[0], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         y = ax[0].lines[-1].get_ydata()
         if fix_dut_fix is not None:
             fix_dut_fix.plot_z_time_step(0, 0, window = window,
-                                     ax = ax[0], linestyle = 'dashed', color = 'm')
+                                     ax = ax[0], linestyle = 'dashed', color = 'm', backend = 'matplotlib')
         ax[0].plot([0], [y[n // 2]], marker = 's', color = 'k', label = 'start')
         ax[0].plot([(self.x_end_dd - (n // 2) - 1) * dt], [self.z_x_dd], marker = 'o',
                    color = 'k', label = f'z_x = {self.z_x_dd:0.1f} ohm')
         fix1.plot_z_time_step(2, 2, window = window,
-                              ax = ax[0], color = 'k')
+                              ax = ax[0], color = 'k', backend = 'matplotlib')
         s2xthru.plot_z_time_step(2, 2, window = window,
-                                 ax = ax[0], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[0], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         if fix_dut_fix is not None:
             fix_dut_fix.plot_z_time_step(2, 2, window = window,
-                                     ax = ax[0], linestyle = 'dashed', color = 'b')
+                                     ax = ax[0], linestyle = 'dashed', color = 'b', backend = 'matplotlib')
         ax[0].legend(loc = 'center left')
 
         ax[1].set_title('Side 2')
         fix2.plot_z_time_step(0, 0, window = window,
-                              ax = ax[1], color = 'k')
+                              ax = ax[1], color = 'k', backend = 'matplotlib')
         s2xthru.plot_z_time_step(1, 1, window = window,
-                                 ax = ax[1], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[1], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         y = ax[1].lines[-1].get_ydata()
         if fix_dut_fix is not None:
             fix_dut_fix.plot_z_time_step(1, 1, window = window,
-                                     ax = ax[1], linestyle = 'dashed', color = 'm')
+                                     ax = ax[1], linestyle = 'dashed', color = 'm', backend = 'matplotlib')
         ax[1].plot([0], [y[n // 2]], marker = 's', color = 'k', label = 'start')
         ax[1].plot([(self.x_end_dd - (n // 2) - 1) * dt], [self.z_x_dd], marker = 'o',
                    color = 'k', label = f'z_x = {self.z_x_dd:0.1f} ohm')
         fix2.plot_z_time_step(2, 2, window = window,
-                              ax = ax[1], color = 'k')
+                              ax = ax[1], color = 'k', backend = 'matplotlib')
         s2xthru.plot_z_time_step(3, 3, window = window,
-                                 ax = ax[1], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[1], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         if fix_dut_fix is not None:
             fix_dut_fix.plot_z_time_step(3, 3, window = window,
-                                     ax = ax[1], linestyle = 'dashed', color = 'b')
+                                     ax = ax[1], linestyle = 'dashed', color = 'b', backend = 'matplotlib')
         delay = 2 * (self.x_end_dd - (n // 2)) * dt
         ax[1].set_xlim((-0.5 * delay, 1.5 * delay))
         ax[1].legend(loc = 'center left')
@@ -4394,8 +4394,8 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
         fig.suptitle('Consistency test #1: Self de-embedding of 2X-Thru')
 
         ax[0].set_title('Magnitude residuals')
-        res.plot_s_db(1,0, ax = ax[0], color = '0.5')
-        res.plot_s_db(0,1, ax = ax[0], color = 'k')
+        res.plot_s_db(1,0, ax = ax[0], color = '0.5', backend = 'matplotlib')
+        res.plot_s_db(0,1, ax = ax[0], color = 'k', backend = 'matplotlib')
         ax[0].plot([res.frequency.f[0], res.frequency.f[-1]],
                        [0.1, 0.1],
                        linestyle = 'dashed', color = 'r', label = 'Limit')
@@ -4405,8 +4405,8 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
         ax[0].legend(loc = 'upper right')
 
         ax[1].set_title('Phase residuals')
-        res.plot_s_deg(1,0, ax = ax[1], color = '0.5')
-        res.plot_s_deg(0,1, ax = ax[1], color = 'k')
+        res.plot_s_deg(1,0, ax = ax[1], color = '0.5', backend = 'matplotlib')
+        res.plot_s_deg(0,1, ax = ax[1], color = 'k', backend = 'matplotlib')
         ax[1].plot([res.frequency.f[0], res.frequency.f[-1]],
                        [1, 1],
                        linestyle = 'dashed', color = 'r', label = 'Limit')
@@ -4439,12 +4439,12 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
         fig.suptitle('Consistency test #2: Compare the TDR of the fixture model to the FIX-DUT-FIX')
         ax[0].set_title('Side 1')
         fix1.plot_z_time_step(0, 0, window = window,
-                              ax = ax[0], color = 'k')
+                              ax = ax[0], color = 'k', backend = 'matplotlib')
         y = ax[0].lines[-1].get_ydata()
         s2xthru.plot_z_time_step(0, 0, window = window,
-                                 ax = ax[0], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[0], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         fix_dut_fix.plot_z_time_step(0, 0, window = window,
-                              ax = ax[0], linestyle = 'dashed', color = 'm')
+                              ax = ax[0], linestyle = 'dashed', color = 'm', backend = 'matplotlib')
         ax[0].plot([-self.leadin * dt], [y[n // 2 - self.leadin]], marker = 's', color = 'k',
                    label = f'start (leadin = {self.leadin})')
         ax[0].plot([self.x_end * dt], [y[self.x_end + n // 2]], marker = 'o', color = 'k',
@@ -4459,12 +4459,12 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
 
         ax[1].set_title('Side 2')
         fix2.plot_z_time_step(0, 0, window = window,
-                              ax = ax[1], color = 'k')
+                              ax = ax[1], color = 'k', backend = 'matplotlib')
         y = ax[1].lines[-1].get_ydata()
         s2xthru.plot_z_time_step(1, 1, window = window,
-                                 ax = ax[1], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[1], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         fix_dut_fix.plot_z_time_step(1, 1, window = window,
-                              ax = ax[1], linestyle = 'dashed', color = 'm')
+                              ax = ax[1], linestyle = 'dashed', color = 'm', backend = 'matplotlib')
         ax[1].plot([-self.leadin * dt], [y[n // 2 - self.leadin]], marker = 's', color = 'k',
                   label = f'start (leadin = {self.leadin})')
         ax[1].plot([self.x_end * dt], [y[self.x_end + n // 2]], marker = 'o', color = 'k',
@@ -4809,10 +4809,10 @@ class IEEEP370_MM_ZC_2xThru(IEEEP370):
         fig.suptitle('Consistency test #1: Self de-embedding of 2X-Thru')
 
         ax[0].set_title('Magnitude residuals')
-        res.plot_s_db(1,0, ax = ax[0])
-        res.plot_s_db(0,1, ax = ax[0])
-        res.plot_s_db(3,2, ax = ax[0])
-        res.plot_s_db(2,3, ax = ax[0])
+        res.plot_s_db(1,0, ax = ax[0], backend = 'matplotlib')
+        res.plot_s_db(0,1, ax = ax[0], backend = 'matplotlib')
+        res.plot_s_db(3,2, ax = ax[0], backend = 'matplotlib')
+        res.plot_s_db(2,3, ax = ax[0], backend = 'matplotlib')
         ax[0].plot([res.frequency.f[0], res.frequency.f[-1]],
                        [0.1, 0.1],
                        linestyle = 'dashed', color = 'r', label = 'Limit')
@@ -4822,10 +4822,10 @@ class IEEEP370_MM_ZC_2xThru(IEEEP370):
         ax[0].legend(loc = 'upper right')
 
         ax[1].set_title('Phase residuals')
-        res.plot_s_deg(1,0, ax = ax[1])
-        res.plot_s_deg(0,1, ax = ax[1])
-        res.plot_s_deg(3,2, ax = ax[1])
-        res.plot_s_deg(2,3, ax = ax[1])
+        res.plot_s_deg(1,0, ax = ax[1], backend = 'matplotlib')
+        res.plot_s_deg(0,1, ax = ax[1], backend = 'matplotlib')
+        res.plot_s_deg(3,2, ax = ax[1], backend = 'matplotlib')
+        res.plot_s_deg(2,3, ax = ax[1], backend = 'matplotlib')
         ax[1].plot([res.frequency.f[0], res.frequency.f[-1]],
                        [1, 1],
                        linestyle = 'dashed', color = 'r', label = 'Limit')
@@ -4868,42 +4868,42 @@ class IEEEP370_MM_ZC_2xThru(IEEEP370):
         fig.suptitle('Consistency test #2: Compare the TDR of the fixture model to the FIX-DUT-FIX')
         ax[0].set_title('Side 1')
         fix1.plot_z_time_step(0, 0, window = window,
-                              ax = ax[0], color = 'k')
+                              ax = ax[0], color = 'k', backend = 'matplotlib')
         y = ax[0].lines[-1].get_ydata()
         s2xthru.plot_z_time_step(0, 0, window = window,
-                                 ax = ax[0], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[0], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         fix_dut_fix.plot_z_time_step(0, 0, window = window,
-                              ax = ax[0], linestyle = 'dashed', color = 'm')
+                              ax = ax[0], linestyle = 'dashed', color = 'm', backend = 'matplotlib')
         ax[0].plot([-self.leadin * dt], [y[n // 2 - self.leadin]], marker = 's', color = 'k',
                    label = f'start (leadin = {self.leadin})')
         ax[0].plot([self.x_end_dd * dt], [y[self.x_end_dd + n // 2]], marker = 'o', color = 'k',
                    label = f'end (pullback1 = {self.pullback1})')
         fix1.plot_z_time_step(2, 2, window = window,
-                              ax = ax[0], color = 'k')
+                              ax = ax[0], color = 'k', backend = 'matplotlib')
         s2xthru.plot_z_time_step(2, 2, window = window,
-                                 ax = ax[0], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[0], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         fix_dut_fix.plot_z_time_step(2, 2, window = window,
-                                     ax = ax[0], linestyle = 'dashed', color = 'b')
+                                     ax = ax[0], linestyle = 'dashed', color = 'b', backend = 'matplotlib')
         ax[0].legend(loc = 'center left')
 
         ax[1].set_title('Side 2')
         fix2.plot_z_time_step(0, 0, window = window,
-                              ax = ax[1], color = 'k')
+                              ax = ax[1], color = 'k', backend = 'matplotlib')
         y = ax[1].lines[-1].get_ydata()
         s2xthru.plot_z_time_step(1, 1, window = window,
-                                 ax = ax[1], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[1], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         fix_dut_fix.plot_z_time_step(1, 1, window = window,
-                              ax = ax[1], linestyle = 'dashed', color = 'm')
+                              ax = ax[1], linestyle = 'dashed', color = 'm', backend = 'matplotlib')
         ax[1].plot([-self.leadin * dt], [y[n // 2 - self.leadin]], marker = 's', color = 'k',
                   label = f'start (leadin = {self.leadin})')
         ax[1].plot([self.x_end_dd * dt], [y[self.x_end_dd + n // 2]], marker = 'o', color = 'k',
                    label = f'end (pullback2 = {self.pullback2})')
         fix2.plot_z_time_step(2, 2, window = window,
-                              ax = ax[1], color = 'k')
+                              ax = ax[1], color = 'k', backend = 'matplotlib')
         s2xthru.plot_z_time_step(3, 3, window = window,
-                                 ax = ax[1], linestyle = 'dotted', color = '0.2')
+                                 ax = ax[1], linestyle = 'dotted', color = '0.2', backend = 'matplotlib')
         fix_dut_fix.plot_z_time_step(3, 3, window = window,
-                                     ax = ax[1], linestyle = 'dashed', color = 'b')
+                                     ax = ax[1], linestyle = 'dashed', color = 'b', backend = 'matplotlib')
         delay = 2 * self.x_end_dd * dt
         ax[1].set_xlim((-0.5 * delay, 1.5 * delay))
         ax[1].legend(loc = 'center left')

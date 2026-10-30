@@ -202,16 +202,28 @@ def test_matplotlib_unchanged_under_global_plotly(ntwk1: rf.Network, ntwk_set_zi
     assert ntwk1.frequency.plot(ntwk1.s_db[:, 0, 0], backend="matplotlib") is None
     assert ntwk1.plot_passivity(backend="matplotlib") is None
     assert ntwk_set_zip.plot_s_db(backend="matplotlib") == [None] * len(ntwk_set_zip)
-    # a matplotlib ax selects matplotlib, so code drawing on its own Axes keeps working
-    assert ntwk1.plot_s_db(0, 0, ax=mpl_axes) is None
-    assert ntwk1.plot_s_smith(ax=mpl_axes) is None
-    assert ntwk1.plot_s_complex(0, 0, mpl_axes) is None
-    assert ntwk_set_zip.plot_uncertainty_bounds_s_db(ax=mpl_axes) is None
-    assert ntwk_set_zip.plot_violin("s_db", ax=mpl_axes) is None
+    # a matplotlib ax needs backend="matplotlib" when the global option is plotly
+    assert ntwk1.plot_s_db(0, 0, ax=mpl_axes, backend="matplotlib") is None
+    assert ntwk1.plot_s_smith(ax=mpl_axes, backend="matplotlib") is None
+    assert ntwk1.plot_s_complex(0, 0, mpl_axes, backend="matplotlib") is None
+    assert ntwk_set_zip.plot_uncertainty_bounds_s_db(ax=mpl_axes, backend="matplotlib") is None
+    assert ntwk_set_zip.plot_violin("s_db", ax=mpl_axes, backend="matplotlib") is None
     assert len(mpl_axes.lines) > 0
     n_lines = len(mpl_axes.lines)
-    assert rf.media.Freespace(ntwk1.frequency).plot_ep_mu(ax=mpl_axes) is None
+    assert rf.media.Freespace(ntwk1.frequency).plot_ep_mu(ax=mpl_axes, backend="matplotlib") is None
     assert len(mpl_axes.lines) == n_lines + 4
+    # without it the ax conflicts with the global backend
+    for call in (lambda: ntwk1.plot_s_db(ax=mpl_axes), lambda: ntwk1.plot_s_smith(ax=mpl_axes),
+                 lambda: ntwk1.plot_it_all(ax=mpl_axes), lambda: ntwk_set_zip.plot_s_db(ax=mpl_axes),
+                 lambda: ntwk_set_zip.plot_uncertainty_bounds_s_db(ax=mpl_axes)):
+        with pytest.raises(TypeError, match="cannot be used with backend='plotly'"):
+            call()
+
+@needs_plotly
+def test_plotly_ax_needs_plotly_backend(ntwk1: rf.Network):
+    # the backend comes from the global option (matplotlib), never from the type of ax
+    with pytest.raises(TypeError, match="cannot be used with backend='matplotlib'"):
+        ntwk1.plot_s_db(ax=go.Figure())
 
 def test_plot_prop_keyword_args(ntwk1: rf.Network, mpl_axes):
     ntwk1.plot_prop_complex(prop_name="s", m=0, n=0, ax=mpl_axes)
@@ -260,10 +272,10 @@ def test_plotly_rectangular_parity(ntwk1_dc: rf.Network, ntwk_set_zip: NetworkSe
 @needs_plotly
 def test_plotly_figure_overlay_and_units(ntwk1: rf.Network):
     fig = go.Figure()
-    assert ntwk1.plot_s_db(0, 0, ax=fig) is fig  # a plotly ax selects plotly
+    assert ntwk1.plot_s_db(0, 0, ax=fig, backend="plotly") is fig
     mhz = ntwk1.copy()
     mhz.frequency.unit = "MHz"
-    assert mhz.plot_s_db(0, 0, ax=fig) is fig
+    assert mhz.plot_s_db(0, 0, ax=fig, backend="plotly") is fig
     assert len(fig.data) == 2
     np.testing.assert_allclose(fig.data[1].x, fig.data[0].x)  # rescaled to the figure's first unit
     assert fig.layout.xaxis.title.text == f"Frequency ({ntwk1.frequency.unit})"
@@ -358,7 +370,7 @@ def test_plotly_smith_grid(mpl_axes):
 def test_plotly_geometric_overlay(ntwk1: rf.Network, kind: str):
     fig = getattr(ntwk1, f"plot_s_{kind}")(0, 0, backend="plotly")
     n_traces, n_grid = len(fig.data), len(_smith_grid_traces(fig))
-    assert getattr(ntwk1, f"plot_s_{kind}")(1, 1, ax=fig) is fig
+    assert getattr(ntwk1, f"plot_s_{kind}")(1, 1, ax=fig, backend="plotly") is fig
     assert len(fig.data) == n_traces + 1
     assert len(_smith_grid_traces(fig)) == n_grid  # the smith chart is drawn once
 
@@ -383,7 +395,7 @@ def test_plotly_bounds_parity(ntwk_set_zip: NetworkSet, method: str, mpl_axes):
         np.testing.assert_allclose(np.unique(fill.y), np.unique(poly.get_paths()[0].vertices[:, 1]))
         assert (fill.fill, fill.fillcolor, fill.showlegend) == ("toself", mean.line.color, False)
     assert fig.layout.yaxis.title.text == mpl_axes.get_ylabel()
-    assert getattr(ntwk_set_zip, method)(ax=fig) is fig
+    assert getattr(ntwk_set_zip, method)(ax=fig, backend="plotly") is fig
     assert len(fig.data) == 4 * len(means)  # mean and fill traces added again
 
 @needs_plotly
@@ -418,7 +430,7 @@ def test_plotly_public_plot_functions(ntwk1: rf.Network, func: str, mpl_axes):
     np.testing.assert_allclose(trace.y, mpl_axes.lines[-1].get_ydata())
     assert trace.name == "a"
     n_traces = len(fig.data)
-    assert getattr(rf.plotting, func)(*args, ax=fig) is fig
+    assert getattr(rf.plotting, func)(*args, ax=fig, backend="plotly") is fig
     assert len(fig.data) == n_traces + 1  # the smith chart is drawn once
 
 @needs_plotly

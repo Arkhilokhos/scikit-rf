@@ -138,18 +138,14 @@ def _is_plotly_figure(ax) -> bool:
 
 def _resolve_backend(backend: str | None = None, ax=None) -> str:
     """
-    Backend for one plot call: `backend` if given, else the type of `ax`, else the global option.
+    Backend for one plot call: `backend` if given, else the global option.
 
-    Following `ax` keeps code that draws on its own matplotlib Axes working
-    when the global option is 'plotly'.
+    Raises if `ax` does not belong to that backend.
     """
-    if backend is None:
-        if ax is None:
-            return options.backend
-        return 'plotly' if _is_plotly_figure(ax) else 'matplotlib'
-    if ax is not None and (_validate_backend(backend) == 'plotly') != _is_plotly_figure(ax):
+    backend = options.backend if backend is None else _validate_backend(backend)
+    if ax is not None and (backend == 'plotly') != _is_plotly_figure(ax):
         raise TypeError(f"ax of type {type(ax).__name__} cannot be used with backend={backend!r}")
-    return _validate_backend(backend)
+    return backend
 
 
 def _import_plotly():
@@ -922,7 +918,7 @@ def plot_complex_rectangular(z: NumberLike,
     y = np.imag(z)
     plot_rectangular(x=x, y=y, x_label=x_label, y_label=y_label,
         title=title, show_legend=show_legend, axis=axis,
-        ax=ax, **kwargs)
+        ax=ax, backend='matplotlib', **kwargs)
 
 
 def plot_complex_polar(z: NumberLike,
@@ -1040,11 +1036,12 @@ def plot_smith(s: NumberLike, smith_r: float = 1, chart_type: str = 'z',
     # test if smith chart is already drawn
     if not force_chart:
         if len(ax.patches) == 0:
-            smith(ax=ax, smithR = smith_r, chart_type=chart_type, draw_vswr=draw_vswr, draw_labels=draw_labels)
+            smith(ax=ax, smithR = smith_r, chart_type=chart_type, draw_vswr=draw_vswr, draw_labels=draw_labels,
+                  backend='matplotlib')
 
     plot_complex_rectangular(s, x_label=x_label, y_label=y_label,
         title=title, show_legend=show_legend, axis=axis,
-        ax=ax, **kwargs)
+        ax=ax, backend='matplotlib', **kwargs)
 
     ax.axis(smith_r*np.array([-1.1, 1.1, -1.1, 1.1]))
     if plt.isinteractive():
@@ -1114,7 +1111,7 @@ def subplot_params(ntwk: Network, param: str = 's', proj: str = 'db',
 
     for ports,ax in zip(ntwk.port_tuples, axs.flatten()):
         plot_func = ntwk.__getattribute__(f'plot_{param}_{proj}')
-        plot_func(m=ports[0], n=ports[1], ax=ax, **kwargs)
+        plot_func(m=ports[0], n=ports[1], ax=ax, backend='matplotlib', **kwargs)
         if add_titles:
             ax.set_title(f"{param.upper()}{ntwk._fmt_trace_name(ports[0], ports[1])}")
     if keep_it_tight:
@@ -1634,7 +1631,8 @@ def plot_s_smith(netw: Network, m=None, n=None,r=1, ax=None, show_legend=True,\
 
             # plot the desired attribute vs frequency
             if len (ax.patches) == 0:
-                smith(ax=ax, smithR = r, chart_type=chart_type, draw_labels=draw_labels, draw_vswr=draw_vswr)
+                smith(ax=ax, smithR = r, chart_type=chart_type, draw_labels=draw_labels, draw_vswr=draw_vswr,
+                      backend='matplotlib')
             ax.plot(netw.s[:,m,n].real,  netw.s[:,m,n].imag, *args,**kwargs)
 
     if plotly:
@@ -1685,7 +1683,7 @@ def plot_it_all(netw: Network, *args, **kwargs):
     >>> from skrf.data import ring_slot
     >>> ring_slot.plot_it_all()
     """
-    kwargs['backend'] = _resolve_backend(kwargs.get('backend'))
+    kwargs['backend'] = _resolve_backend(kwargs.get('backend'), kwargs.get('ax'))
     if kwargs['backend'] == 'plotly':
         return _plotly_subplots([method(*args, **kwargs) for method in
                                  [netw.plot_s_db, netw.plot_s_deg, netw.plot_s_smith, netw.plot_s_complex]], cols=2)
@@ -1782,7 +1780,7 @@ def animate(self: NetworkSet, attr: str = 's_deg', ylims: tuple = (-5, 5),
     >>> ns.animate('s_deg', ylims=(-5,5), label=None)
 
     """
-    kwargs['backend'] = _resolve_backend(kwargs.get('backend'))
+    kwargs['backend'] = _resolve_backend(kwargs.get('backend'), kwargs.get('ax'))
     if kwargs['backend'] == 'plotly':
         go = _import_plotly()
         unit = self[0].frequency.unit
@@ -1917,7 +1915,8 @@ def plot_uncertainty_bounds_component(
     similar. uncertainty for wrapped phase blows up at +-pi.
 
     """
-    plotly = _resolve_backend(backend, ax) == 'plotly'
+    backend = _resolve_backend(backend, ax)
+    plotly = backend == 'plotly'
     ax = _plotly_figure(ax) if plotly else _get_axes(ax)
 
     kwargs_error = kwargs_error if kwargs_error else {}
@@ -1957,7 +1956,7 @@ def plot_uncertainty_bounds_component(
                         plot_attribute = 's_time_db'
 
             if type == 'shade':
-                ntwk_mean.plot_s_re(ax=ax, m=m, n=n, **kwargs)
+                ntwk_mean.plot_s_re(ax=ax, m=m, n=n, backend=backend, **kwargs)
                 if plotly:
                     _plotly_fill_between(ax, ntwk_mean.frequency, lower_bound.real, upper_bound.real,
                                          color_error or _plotly_trace_color(ax), alpha, **kwargs_error)
@@ -1970,7 +1969,7 @@ def plot_uncertainty_bounds_component(
                 # ax.plot(ntwk_mean.frequency.f_scaled, ntwk_mean.s[:,m,n],*args,**kwargs)
 
             elif type == 'bar':
-                ntwk_mean.plot_s_re(ax=ax, m=m, n=n, **kwargs)
+                ntwk_mean.plot_s_re(ax=ax, m=m, n=n, backend=backend, **kwargs)
                 y = ntwk_mean.s_re[:, m, n].squeeze()[::markevery_error]
                 yerr = ntwk_std.s_mag[:, m, n].squeeze()[::markevery_error]
                 if plotly:
@@ -2061,7 +2060,8 @@ def plot_minmax_bounds_component(self: NetworkSet, attribute: PrimaryPropertiesT
     similar.  Uncertainty for wrapped phase blows up at +-pi.
 
     """
-    plotly = _resolve_backend(backend, ax) == 'plotly'
+    backend = _resolve_backend(backend, ax)
+    plotly = backend == 'plotly'
     ax = _plotly_figure(ax) if plotly else _get_axes(ax)
 
     kwargs_error = kwargs_error if kwargs_error else {}
@@ -2086,7 +2086,7 @@ def plot_minmax_bounds_component(self: NetworkSet, attribute: PrimaryPropertiesT
                 attribute = 's_time_db'
 
     if type == 'shade':
-        ntwk_mean.plot_s_re(ax=ax,m=m,n=n, **kwargs)
+        ntwk_mean.plot_s_re(ax=ax,m=m,n=n, backend=backend, **kwargs)
         if plotly:
             _plotly_fill_between(ax, ntwk_mean.frequency, lower_bound, upper_bound,
                                  color_error or _plotly_trace_color(ax), alpha, **kwargs_error)
@@ -2099,7 +2099,7 @@ def plot_minmax_bounds_component(self: NetworkSet, attribute: PrimaryPropertiesT
         #ax.plot(ntwk_mean.frequency.f_scaled,ntwk_mean.s[:,m,n],*args,**kwargs)
     elif type =='bar':
         raise (NotImplementedError)
-        ntwk_mean.plot_s_re(ax=ax, m=m, n=n, **kwargs)
+        ntwk_mean.plot_s_re(ax=ax, m=m, n=n, backend=backend, **kwargs)
         if color_error is None:
             color_error = ax.get_lines()[-1].get_color()
         ax.errorbar(ntwk_mean.frequency.f[::markevery_error],
@@ -2562,7 +2562,7 @@ def plot_prop_complex(netw: Network, prop_name: str,
     plotly = _resolve_backend(backend, ax) == 'plotly'
     if plotly:
         ax = _plotly_figure(ax)
-    plot_z = _plotly_complex if plotly else plot_complex_rectangular
+    plot_z = _plotly_complex if plotly else partial(plot_complex_rectangular, backend='matplotlib')
 
     # create index lists, if not provided by user
     if m is None:

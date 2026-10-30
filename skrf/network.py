@@ -197,7 +197,7 @@ import re
 import warnings
 import zipfile
 from copy import deepcopy as copy
-from functools import reduce
+from functools import partial, reduce
 from itertools import product
 from numbers import Number
 from pathlib import Path
@@ -5215,7 +5215,7 @@ class Network:
 
         plotly = rfplt._resolve_backend(backend, ax) == 'plotly'
         ax = rfplt._plotly_figure(ax) if plotly else rfplt._get_axes(ax)
-        plot_rect = rfplt._plotly_rect if plotly else rfplt.plot_rectangular
+        plot_rect = rfplt._plotly_rect if plotly else partial(rfplt.plot_rectangular, backend='matplotlib')
 
         # create y_label if not provided
         if y_label is None:
