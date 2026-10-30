@@ -312,23 +312,56 @@ class Freespace(Media):
         ep = self.ep_with_rho
         return sqrt(self.mu/ep)*ones(len(self))
 
-    def plot_ep(self):
+    def plot_ep(self, ax=None, backend: str | None = None):
         """
         Plot the real and imaginary part of the complex permittivity.
-        """
-        self.plot(self.ep_r.real, label=r'ep_r real', backend='matplotlib')
-        self.plot(self.ep_r.imag, label=r'ep_r imag', backend='matplotlib')
 
-    def plot_mu(self):
+        Parameters
+        ----------
+        ax : :class:`matplotlib.axes.Axes` or plotly Figure, optional
+            axes to draw on.
+        backend : {'matplotlib', 'plotly'}, optional
+            plotting backend, default ``skrf.plotting.options.backend``.
+
+        Returns
+        -------
+        None, or the plotly Figure with the plotly backend
+        """
+        fig = self.plot(self.ep_r.real, label=r'ep_r real', ax=ax, backend=backend)
+        return self.plot(self.ep_r.imag, label=r'ep_r imag', ax=ax if fig is None else fig, backend=backend)
+
+    def plot_mu(self, ax=None, backend: str | None = None):
         """
         Plot the real and imaginary part of the complex permeability.
-        """
-        self.plot(self.mu_r.real, label=r'mu_r real', backend='matplotlib')
-        self.plot(self.mu_r.imag, label=r'mu_r imag', backend='matplotlib')
 
-    def plot_ep_mu(self):
+        Parameters
+        ----------
+        ax : :class:`matplotlib.axes.Axes` or plotly Figure, optional
+            axes to draw on.
+        backend : {'matplotlib', 'plotly'}, optional
+            plotting backend, default ``skrf.plotting.options.backend``.
+
+        Returns
+        -------
+        None, or the plotly Figure with the plotly backend
+        """
+        fig = self.plot(self.mu_r.real, label=r'mu_r real', ax=ax, backend=backend)
+        return self.plot(self.mu_r.imag, label=r'mu_r imag', ax=ax if fig is None else fig, backend=backend)
+
+    def plot_ep_mu(self, ax=None, backend: str | None = None):
         """
         Plot the real and imaginary part of the complex permittivity with resistivity.
+
+        Parameters
+        ----------
+        ax : :class:`matplotlib.axes.Axes` or plotly Figure, optional
+            axes to draw on.
+        backend : {'matplotlib', 'plotly'}, optional
+            plotting backend, default ``skrf.plotting.options.backend``.
+
+        Returns
+        -------
+        None, or the plotly Figure with the plotly backend
         """
-        self.plot_ep()
-        self.plot_mu()
+        fig = self.plot_ep(ax=ax, backend=backend)
+        return self.plot_mu(ax=ax if fig is None else fig, backend=backend)

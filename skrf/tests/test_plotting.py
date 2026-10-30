@@ -209,10 +209,9 @@ def test_matplotlib_unchanged_under_global_plotly(ntwk1: rf.Network, ntwk_set_zi
     assert ntwk_set_zip.plot_uncertainty_bounds_s_db(ax=mpl_axes) is None
     assert ntwk_set_zip.plot_violin("s_db", ax=mpl_axes) is None
     assert len(mpl_axes.lines) > 0
-    # matplotlib-only helpers ignore the global option
     n_lines = len(mpl_axes.lines)
-    rf.media.Freespace(ntwk1.frequency).plot_ep()
-    assert len(mpl_axes.lines) == n_lines + 2
+    assert rf.media.Freespace(ntwk1.frequency).plot_ep_mu(ax=mpl_axes) is None
+    assert len(mpl_axes.lines) == n_lines + 4
 
 def test_plot_prop_keyword_args(ntwk1: rf.Network, mpl_axes):
     ntwk1.plot_prop_complex(prop_name="s", m=0, n=0, ax=mpl_axes)
@@ -227,7 +226,8 @@ def test_plotly_does_not_import_matplotlib():
         "ns = rf.networkSet.NetworkSet([n, n]); ns.plot_uncertainty_bounds_s_db(); ns.plot_minmax_bounds_s_db(); "
         "ns.plot_violin('s_db'); ns.plot_uncertainty_decomposition(); s = n.s[:, 0, 0]; "
         "rf.plotting.plot_rectangular(n.f, n.s_db[:, 0, 0]); rf.plotting.plot_complex_rectangular(s); "
-        "rf.plotting.plot_complex_polar(s); rf.plotting.plot_smith(s); rf.plotting.subplot_params(n)")
+        "rf.plotting.plot_complex_polar(s); rf.plotting.plot_smith(s); rf.plotting.subplot_params(n); "
+        "rf.media.Freespace(n.frequency).plot_ep_mu()")
     assert "plotly" in loaded
     assert "matplotlib" not in loaded
 
@@ -500,3 +500,13 @@ def test_plotly_calibration_residuals(one_port_cal, attr: str, mpl_axes):
     assert len([t for t in fig.data if t.name]) == len(one_port_cal.residual_ntwks)
     if attr == "s_db":
         assert_plotly_parity(fig, mpl_axes, x_scale=1e9)
+
+@needs_plotly
+@pytest.mark.parametrize("method", ["plot_ep", "plot_mu", "plot_ep_mu"])
+def test_plotly_freespace(ntwk1: rf.Network, method: str, mpl_axes):
+    media = rf.media.Freespace(ntwk1.frequency, ep_r=4 - 0.1j, mu_r=1.2)
+    assert getattr(media, method)(ax=mpl_axes) is None
+    fig = getattr(media, method)(backend="plotly")
+    assert_plotly_parity(fig, mpl_axes, x_scale=1e9)
+    rf.plotting.options.backend = "plotly"
+    assert isinstance(getattr(media, method)(), go.Figure)
