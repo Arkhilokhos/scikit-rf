@@ -723,21 +723,40 @@ def _plotly_subplots(figs: list, cols: int, **kwargs):
     from plotly.subplots import make_subplots
 
     fig = make_subplots(rows=-(-len(figs) // cols), cols=cols, **kwargs).update_layout(_PLOTLY_LAYOUT)
-    shown = set()
     for i, sub in enumerate(figs):
-        row, col, xaxis = i // cols + 1, i % cols + 1, f"x{i + 1 if i else ''}"
-        for trace in sub.data:  # one legend entry per trace name for all panels
-            trace.update(legendgroup=trace.name, showlegend=bool(trace.showlegend) and trace.name not in shown)
-            if trace.showlegend:
-                shown.add(trace.name)
-        fig.add_traces(sub.data, rows=row, cols=col)
-        fig.update_xaxes(sub.layout.xaxis, row=row, col=col)
-        fig.update_yaxes(sub.layout.yaxis, row=row, col=col)
-        if sub.layout.yaxis.scaleanchor:
-            fig.update_yaxes(scaleanchor=xaxis, row=row, col=col)
-        for annotation in sub.layout.annotations:
-            fig.add_annotation(annotation, row=row, col=col)
+        _plotly_add_panel(fig, sub, i // cols + 1, i % cols + 1, i)
     return fig
+
+
+def _plotly_add_panel(fig, panel, row: int, col: int, k: int, show_legend: bool = True):
+    """
+    Copy the traces, axes and annotations of the plotly Figure `panel` into subplot `row`, `col` of `fig`.
+
+    Its legend entries go to the `k`-th legend of `fig`, if `show_legend`, which is placed in the plot
+    area of the subplot like matplotlib's legend of each Axes.
+    """
+    legend = f"legend{k + 1 if k else ''}"
+    for trace in panel.data:
+        trace.update(legend=legend, showlegend=bool(trace.showlegend) and show_legend)
+    fig.add_traces(panel.data, rows=row, cols=col)
+    subplot = fig.get_subplot(row, col)
+    fig.update_xaxes(panel.layout.xaxis, row=row, col=col)
+    fig.update_yaxes(panel.layout.yaxis, row=row, col=col)
+    if panel.layout.yaxis.scaleanchor:
+        fig.update_yaxes(scaleanchor=subplot.yaxis.anchor, row=row, col=col)
+    for annotation in panel.layout.annotations:
+        fig.add_annotation(annotation, row=row, col=col)
+    if not any(trace.showlegend for trace in panel.data):
+        return
+    (x0, x1), (y0, y1), margin = subplot.xaxis.domain, subplot.yaxis.domain, fig.layout.margin
+    # plot area in pixels, with plotly's default size and margins where unset
+    width = (x1 - x0) * ((fig.layout.width or 700) - (margin.l or 80) - (margin.r or 80))
+    height = (y1 - y0) * ((fig.layout.height or 450) - (margin.t or 100) - (margin.b or 80))
+    x, y = _plotly_legend_position(panel, width, height)
+    fig.update_layout({legend: dict(
+        x=x0 + x * (x1 - x0), y=y0 + y * (y1 - y0), xanchor={0: 'left', 1: 'right'}[x],
+        yanchor={0: 'bottom', 1: 'top'}.get(y, 'middle'), font_size=_PLOTLY_LEGEND_FONT,
+        bgcolor='rgba(255,255,255,0.8)', bordercolor='lightgrey', borderwidth=1)})
 
 
 class _PlotlyLine:
@@ -814,7 +833,7 @@ def _plotly_legend_position(fig, width: float, height: float) -> tuple[float, fl
     # the traces resampled along their length, so that lines with few points still count where they pass
     points = []
     for trace in fig.data:
-        if trace.x is None or trace.y is None or len(trace.x) == 0:
+        if trace.x is None or trace.y is None or len(trace.x) == 0 or trace.meta == 'skrf_smith_chart':
             continue
         x, y = np.asarray(trace.x, dtype=float), np.asarray(trace.y, dtype=float)
         t = np.linspace(0, len(x) - 1, 200)
@@ -881,24 +900,7 @@ class _PlotlyFigure:
             except ValueError:  # a figure from an earlier call already has the subplots: draw over it
                 pass
         for k, ((row, col), ax) in enumerate(sorted(cells.items())):
-            # a legend in the plot area of each panel that has one, like matplotlib
-            legend = f"legend{k + 1 if k else ''}"
-            for trace in ax.fig.data:
-                trace.update(legend=legend, showlegend=bool(trace.showlegend) and ax.has_legend)
-            fig.add_traces(ax.fig.data, rows=row + 1, cols=col + 1)
-            fig.update_xaxes(ax.fig.layout.xaxis, row=row + 1, col=col + 1)
-            fig.update_yaxes(ax.fig.layout.yaxis, row=row + 1, col=col + 1)
-            if ax.has_legend:
-                subplot, margin = fig.get_subplot(row + 1, col + 1), fig.layout.margin
-                (x0, x1), (y0, y1) = subplot.xaxis.domain, subplot.yaxis.domain
-                # plot area in pixels, with plotly's default size and margins where unset
-                width = (x1 - x0) * ((fig.layout.width or 700) - (margin.l or 80) - (margin.r or 80))
-                height = (y1 - y0) * ((fig.layout.height or 450) - (margin.t or 100) - (margin.b or 80))
-                x, y = _plotly_legend_position(ax.fig, width, height)
-                fig.update_layout({legend: dict(
-                    x=x0 + x * (x1 - x0), y=y0 + y * (y1 - y0), xanchor={0: 'left', 1: 'right'}[x],
-                    yanchor={0: 'bottom', 1: 'top'}.get(y, 'middle'), font_size=_PLOTLY_LEGEND_FONT,
-                    bgcolor='rgba(255,255,255,0.8)', bordercolor='lightgrey', borderwidth=1)})
+            _plotly_add_panel(fig, ax.fig, row + 1, col + 1, k, show_legend=ax.has_legend)
         if self.title is not None:
             fig.update_layout(title_text=self.title)
         return fig

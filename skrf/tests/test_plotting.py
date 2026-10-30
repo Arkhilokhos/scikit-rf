@@ -417,7 +417,12 @@ def test_plotly_plot_it_all(ntwk1_dc: rf.Network):
     assert len(data) == 4 * ntwk1_dc.nports**2
     assert {t.xaxis for t in data} == {"x", "x2", "x3", "x4"}
     assert (fig.layout.yaxis3.scaleanchor, fig.layout.yaxis4.scaleanchor) == ("x3", "x4")
-    assert [t.name for t in fig.data if t.showlegend] == [t.name for t in data if t.xaxis == "x"]
+    # a legend of its own in each panel, as matplotlib
+    for k, xaxis in enumerate(["x", "x2", "x3", "x4"]):
+        traces = [t for t in data if t.xaxis == xaxis]
+        assert {t.legend for t in traces} == {f"legend{k + 1 if k else ''}"} and all(t.showlegend for t in traces)
+        x0, x1 = fig.layout[xaxis.replace("x", "xaxis")].domain
+        assert x0 <= fig.layout[f"legend{k + 1 if k else ''}"].x <= x1
 
 @needs_plotly
 @pytest.mark.parametrize("func", ["plot_rectangular", "plot_complex_rectangular", "plot_smith"])
@@ -450,6 +455,7 @@ def test_plotly_subplot_params(ntwk1: rf.Network):
     assert {t.xaxis for t in fig.data} == {"x", "x2", "x3", "x4"}
     assert [a.text for a in fig.layout.annotations] == ["S11", "S21", "S12", "S22"]
     assert all(t.showlegend for t in fig.data)
+    assert [t.legend for t in fig.data] == ["legend", "legend2", "legend3", "legend4"]  # one per panel
     assert (fig.layout.width, fig.layout.height) == (800, 800)
 
 def test_shade_bands(ntwk1: rf.Network, mpl_axes):
