@@ -679,13 +679,18 @@ def test_plotly_calibration_set_uncertainty(one_port_cal, mpl_axes):
         cal_set.plot_uncertainty_per_standard(ax=mpl_axes, backend="plotly")
 
 @pytest.fixture(scope="module")
-def deembedding():
+def p370_networks():
+    """The test 2x-thru and FIX-DUT-FIX, and four-ports of two of each for the mixed-mode de-embeddings."""
+    test_dir = rf.calibration.__path__[0] + "/tests/deembed/"
+    s2x, fdf = rf.Network(test_dir + "s2xthru.s2p"), rf.Network(test_dir + "fdf.s2p")
+    return (s2x, fdf, *(rf.network.concat_ports([n, n], port_order="second") for n in (s2x, fdf)))
+
+@pytest.fixture(scope="module")
+def deembedding(p370_networks):
     """Single-ended and mixed-mode IEEE P370 de-embeddings of the test 2x-thru and FIX-DUT-FIX."""
     from skrf.calibration import deembedding as de
 
-    test_dir = rf.calibration.__path__[0] + "/tests/deembed/"
-    s2x, fdf = rf.Network(test_dir + "s2xthru.s2p"), rf.Network(test_dir + "fdf.s2p")
-    se2x, sefdf = (rf.network.concat_ports([n, n], port_order="second") for n in (s2x, fdf))
+    s2x, fdf, se2x, sefdf = p370_networks
     se_nzc, se_zc = de.IEEEP370_SE_NZC_2xThru(s2x, name="nzc"), de.IEEEP370_SE_ZC_2xThru(s2x, fdf, name="zc")
     mm_nzc = de.IEEEP370_MM_NZC_2xThru(se2x, name="mm nzc")
     mm_zc = de.IEEEP370_MM_ZC_2xThru(dummy_2xthru=se2x, dummy_fix_dut_fix=sefdf, name="mm zc")
@@ -764,3 +769,30 @@ def test_plotly_legend_position():
     assert rf.plotting._plotly_legend_position(fig, 300, 300) == (1, 1)
     fig.update_yaxes(range=[-1, 0.12])  # the line at the top
     assert rf.plotting._plotly_legend_position(fig, 300, 300) == (1, 0)
+
+@needs_plotly
+@pytest.mark.filterwarnings("ignore:divide by zero:RuntimeWarning")  # no mode conversion in the mixed-mode data
+@pytest.mark.parametrize("make", [  # each returns the object that drew, and keeps, the verbose figures
+    lambda de, s2x, fdf, se2x, sefdf: (qm := de.IEEEP370_FD_QM(), qm.check_se_quality(s2x, verbose=True))[0],
+    lambda de, s2x, fdf, se2x, sefdf: (qm := de.IEEEP370_TD_QM(1e9, 32, 0.4, 2, 2),
+                                       qm.check_se_quality(s2x, verbose=True))[0],
+    lambda de, s2x, fdf, se2x, sefdf: de.IEEEP370_SE_NZC_2xThru(s2x, verbose=True),
+    lambda de, s2x, fdf, se2x, sefdf: de.IEEEP370_SE_ZC_2xThru(s2x, fdf, bandwidth_limit=5e9, leadin=1, verbose=True),
+    lambda de, s2x, fdf, se2x, sefdf: de.IEEEP370_MM_NZC_2xThru(se2x, verbose=True),
+], ids=["fd_qm", "td_qm", "se_nzc", "se_zc", "mm_nzc"])
+def test_plotly_verbose_figures(p370_networks, make, monkeypatch):
+    from skrf.calibration import deembedding as de
+
+    mpl_figs = make(de, *p370_networks).verbose_figures
+    assert mpl_figs and all(isinstance(f, mpl.figure.Figure) for f in mpl_figs)
+    shown = []
+    monkeypatch.setattr(go.Figure, "show", lambda fig, *a, **k: shown.append(fig))
+    rf.plotting.options.backend = "plotly"
+    figs = make(de, *p370_networks).verbose_figures
+    # each figure is shown and kept, with the panels, titles and traces of its matplotlib figure
+    assert shown == figs and len(figs) == len(mpl_figs)
+    for fig, mpl_fig in zip(figs, mpl_figs):
+        assert len(fig.data) == sum(len(ax.lines) for ax in mpl_fig.axes)
+        titles = [ax.get_title() for ax in mpl_fig.axes if ax.get_title()]
+        assert [a.text for a in fig.layout.annotations if a.text in titles] == titles
+    mpl.pyplot.close("all")

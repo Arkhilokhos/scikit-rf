@@ -740,15 +740,20 @@ def _plotly_add_panel(fig, panel, row: int, col: int, k: int, show_legend: bool 
         trace.update(legend=legend, showlegend=bool(trace.showlegend) and show_legend)
     fig.add_traces(panel.data, rows=row, cols=col)
     subplot = fig.get_subplot(row, col)
-    fig.update_xaxes(panel.layout.xaxis, row=row, col=col)
-    fig.update_yaxes(panel.layout.yaxis, row=row, col=col)
-    if panel.layout.yaxis.scaleanchor:
-        fig.update_yaxes(scaleanchor=subplot.yaxis.anchor, row=row, col=col)
-    for annotation in panel.layout.annotations:
-        fig.add_annotation(annotation, row=row, col=col)
+    if hasattr(subplot, 'xaxis'):
+        fig.update_xaxes(panel.layout.xaxis, row=row, col=col)
+        fig.update_yaxes(panel.layout.yaxis, row=row, col=col, secondary_y=False)
+        if panel.layout.yaxis.scaleanchor:
+            fig.update_yaxes(scaleanchor=subplot.yaxis.anchor, row=row, col=col, secondary_y=False)
+        for annotation in panel.layout.annotations:
+            fig.add_annotation(annotation, row=row, col=col)
+        (x0, x1), (y0, y1) = subplot.xaxis.domain, subplot.yaxis.domain
+    else:  # a polar subplot
+        fig.update_polars(panel.layout.polar, row=row, col=col)
+        (x0, x1), (y0, y1) = subplot.domain.x, subplot.domain.y
     if not any(trace.showlegend for trace in panel.data):
         return
-    (x0, x1), (y0, y1), margin = subplot.xaxis.domain, subplot.yaxis.domain, fig.layout.margin
+    margin = fig.layout.margin
     # plot area in pixels, with plotly's default size and margins where unset
     width = (x1 - x0) * ((fig.layout.width or 700) - (margin.l or 80) - (margin.r or 80))
     height = (y1 - y0) * ((fig.layout.height or 450) - (margin.t or 100) - (margin.b or 80))
@@ -780,8 +785,9 @@ class _PlotlyAxes:
     It draws on its own plotly Figure `fig`, and plot functions take it as a plotly `ax`.
     """
 
-    def __init__(self, pos: tuple[int, int, int]):
-        self.pos, self.title, self.has_legend, self.fig = pos, None, False, _plotly_figure()
+    def __init__(self, pos: tuple[int, int, int], polar: bool = False):
+        self.pos, self.polar, self.title, self.has_legend, self.fig = pos, polar, None, False, _plotly_figure()
+        self.twins = []  # from twinx(), drawn on a second y-axis of this panel
 
     @property
     def lines(self) -> list[_PlotlyLine]:
@@ -815,6 +821,10 @@ class _PlotlyAxes:
     def grid(self, *args, **kwargs):
         pass  # plotly draws a grid by default
 
+    def twinx(self) -> _PlotlyAxes:
+        self.twins.append(_PlotlyAxes(self.pos))
+        return self.twins[-1]
+
 
 # candidate legend positions in a plot area, as fractions of its width and height, in order of preference
 _PLOTLY_LEGEND_SPOTS = ((1, 1), (0, 1), (1, 0), (0, 0), (1, .5), (0, .5))
@@ -833,7 +843,7 @@ def _plotly_legend_position(fig, width: float, height: float) -> tuple[float, fl
     # the traces resampled along their length, so that lines with few points still count where they pass
     points = []
     for trace in fig.data:
-        if trace.x is None or trace.y is None or len(trace.x) == 0 or trace.meta == 'skrf_smith_chart':
+        if getattr(trace, 'x', None) is None or getattr(trace, 'y', None) is None or len(trace.x) == 0                 or trace.meta == 'skrf_smith_chart':  # no data in a plot area (polar), or no data at all
             continue
         x, y = np.asarray(trace.x, dtype=float), np.asarray(trace.y, dtype=float)
         t = np.linspace(0, len(x) - 1, 200)
@@ -865,8 +875,8 @@ class _PlotlyFigure:
     def __init__(self, fig=None, figsize: tuple = (6.4, 4.8)):
         self.fig, self.figsize, self.axes, self.title = fig, figsize, [], None
 
-    def add_subplot(self, rows: int, cols: int, index: int) -> _PlotlyAxes:
-        self.axes.append(_PlotlyAxes((rows, cols, index)))
+    def add_subplot(self, rows: int, cols: int, index: int, projection: str | None = None) -> _PlotlyAxes:
+        self.axes.append(_PlotlyAxes((rows, cols, index), polar=projection == 'polar'))
         return self.axes[-1]
 
     def suptitle(self, title: str):
@@ -887,7 +897,8 @@ class _PlotlyFigure:
         for ax in self.axes:
             r, c, i = ax.pos
             row, col = (i - 1) // c * (rows // r), (i - 1) % c * (cols // c)
-            specs[row][col], cells[row, col] = dict(rowspan=rows // r, colspan=cols // c), ax
+            spec = dict(type='polar') if ax.polar else dict(secondary_y=bool(ax.twins))
+            specs[row][col], cells[row, col] = dict(rowspan=rows // r, colspan=cols // c, **spec), ax
         grid = dict(rows=rows, cols=cols, specs=specs,
                     subplot_titles=[cells[cell].title or '' for cell in sorted(cells)])
         fig = self.fig
@@ -901,6 +912,12 @@ class _PlotlyFigure:
                 pass
         for k, ((row, col), ax) in enumerate(sorted(cells.items())):
             _plotly_add_panel(fig, ax.fig, row + 1, col + 1, k, show_legend=ax.has_legend)
+            for twin in ax.twins:  # on the second y-axis, in the legend of the panel
+                for trace in twin.fig.data:
+                    trace.update(legend=f"legend{k + 1 if k else ''}", showlegend=bool(trace.showlegend)
+                                 and twin.has_legend)
+                fig.add_traces(twin.fig.data, rows=row + 1, cols=col + 1, secondary_ys=[True] * len(twin.fig.data))
+                fig.update_yaxes(twin.fig.layout.yaxis, row=row + 1, col=col + 1, secondary_y=True)
         if self.title is not None:
             fig.update_layout(title_text=self.title)
         return fig

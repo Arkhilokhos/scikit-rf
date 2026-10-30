@@ -86,6 +86,18 @@ if TYPE_CHECKING:
 
 PortOrderT = Literal["first", "second", "third"]
 
+
+def _show_verbose_figure(owner, fig, backend: str) -> None:
+    """
+    Keep a figure of the `verbose` output in ``owner.verbose_figures``, and show it with plotly.
+
+    pyplot keeps the matplotlib figures, and a notebook shows them, which plotly does not do for its own.
+    """
+    if backend == 'plotly':
+        fig = fig.to_plotly()
+        fig.show()
+    owner.verbose_figures.append(fig)
+
 class Deembedding(ABC):
     """
     Abstract Base Class for all de-embedding objects.
@@ -1861,7 +1873,9 @@ class IEEEP370_FD_QM:
         ----------
         verbose      : :boolean
                        Plot internal causality, passivity, and reciprocity
-                       figures (default False)
+                       figures (default False).
+                       The figures follow the plotting backend, are kept
+                       in `verbose_figures`, and with plotly are shown as drawn.
 
         References
         ----------
@@ -1870,6 +1884,7 @@ class IEEEP370_FD_QM:
         IEEE 370-2020.
         """
         self.verbose = verbose
+        self.verbose_figures = []
 
     def check_causality(self, ntwk: Network) -> float:
         """
@@ -2036,11 +2051,12 @@ class IEEEP370_FD_QM:
         # verbose
         if verbose:
             name = ntwk.name if ntwk.name else 'Network'
-            fig = figure(figsize = (12, 4.4))
+            backend = _resolve_backend()
+            fig = _figure(backend, figsize = (12, 4.4))
             fig.suptitle('Initial checking in the frequency domain')
             ax = fig.add_subplot(1, 3, 1, projection = 'polar')
             ax.set_title('Causality')
-            ntwk.plot_s_polar(ax = ax, backend = 'matplotlib')
+            ntwk.plot_s_polar(ax = ax, backend = backend)
             ax.legend(loc = 'upper right')
             ax = fig.add_subplot(1, 3, 2)
             ax.set_title('Passivity')
@@ -2057,6 +2073,7 @@ class IEEEP370_FD_QM:
             ax.set_ylabel('Sum of S-pairs differences')
             ax.legend(loc = 'upper right')
             fig.tight_layout()
+            _show_verbose_figure(self, fig, backend)
 
         return QM
 
@@ -2144,7 +2161,9 @@ class IEEEP370_TD_QM:
         verbose      : :boolean
                        Plot extrapolated frequency data, generated pulse and
                        the time domain comparison between the original and the
-                       causality enforced responses
+                       causality enforced responses.
+                       The figures follow the plotting backend, are kept
+                       in `verbose_figures`, and with plotly are shown as drawn.
 
         References
         ----------
@@ -2158,6 +2177,7 @@ class IEEEP370_TD_QM:
         self.pulse_shape = pulse_shape
         self.extrapolation = extrapolation
         self.verbose = verbose
+        self.verbose_figures = []
 
     def add_conj(self, s_ij: ndarray):
         """
@@ -2581,13 +2601,15 @@ class IEEEP370_TD_QM:
         for i in range(N):
             self.v_pulse[i] = self.v_ref[np.mod(i + k_middle - k_start, N).astype(int)]
         if verbose:
-            fig, ax = subplots(1, 1)
+            backend = _resolve_backend()
+            fig, ax = _subplots(1, 1, backend)
             ax.plot(self.t_pulse, self.v_ref, color = 'r', label = 'Reference')
             ax.plot(self.t_pulse, self.v_pulse, linestyle = 'dashed', label = 'Generated')
             ax.legend(loc = 'upper right')
             ax.set_ylabel('Amplitude (V)')
             ax.set_xlabel('Time (s)')
             ax.set_title('Gaussian Pulse')
+            _show_verbose_figure(self, fig, backend)
 
         return fft(self.v_pulse)
 
@@ -2629,7 +2651,8 @@ class IEEEP370_TD_QM:
         self.v_pulse = interp(self.t_pulse)
 
         if verbose:
-            fig, ax = subplots(1, 1)
+            backend = _resolve_backend()
+            fig, ax = _subplots(1, 1, backend)
             ax.plot(self.t_ref, self.v_ref, color = 'r', marker = 'o',
                     label = 'Reference')
             ax.plot(self.t_pulse, self.v_pulse, linestyle = 'dashed',
@@ -2638,6 +2661,7 @@ class IEEEP370_TD_QM:
             ax.set_ylabel('Amplitude (V)')
             ax.set_xlabel('Time (s)')
             ax.set_title('Rectangular Pulse')
+            _show_verbose_figure(self, fig, backend)
 
         return fft(self.v_pulse)
 
@@ -2827,27 +2851,28 @@ class IEEEP370_TD_QM:
         self.ntwk_interpolated = self.extrapolate_to_dc(self.ntwk_interpolated)
 
         if verbose:
-            fig, axs = subplots(2, 3, figsize = (12, 7))
+            backend = _resolve_backend()
+            fig, axs = _subplots(2, 3, backend, figsize = (12, 7))
             fig.suptitle('Application-based checking in the time domain')
             ax = axs[0, 0]
             ax.set_title('Extrapolation')
             self.ntwk_interpolated.frequency.unit = ntwk.frequency.unit
             # avoid log(0) issues with zero padding
-            ntwk.plot_s_db(1, 0, color = 'r', ax = ax, label = 'Original, S21', backend = 'matplotlib')
+            ntwk.plot_s_db(1, 0, color = 'r', ax = ax, label = 'Original, S21', backend = backend)
             if self.extrapolation == 2:
                 nz_k = np.nonzero(self.ntwk_interpolated.s[:, 1, 0])[0]
                 self.ntwk_interpolated[:nz_k[-1]].plot_s_db(1, 0, color = 'b',
                                             linestyle = 'dashed', ax = ax,
-                                            label = 'Extrapolated, S21', backend = 'matplotlib')
+                                            label = 'Extrapolated, S21', backend = backend)
             else:
                 self.ntwk_interpolated.plot_s_db(1, 0, color = 'b',
                                                  linestyle = 'dashed', ax = ax,
-                                                 label = 'Extrapolated, S21', backend = 'matplotlib')
+                                                 label = 'Extrapolated, S21', backend = backend)
             secax = ax.twinx()
-            ntwk.plot_s_deg(1, 0, color = 'm', ax = secax, label = 'Original, S21', backend = 'matplotlib')
+            ntwk.plot_s_deg(1, 0, color = 'm', ax = secax, label = 'Original, S21', backend = backend)
             self.ntwk_interpolated.plot_s_deg(1, 0, color = 'c',
                                               linestyle = 'dashed', ax = secax,
-                                              label = 'Extrapolated, S21', backend = 'matplotlib')
+                                              label = 'Extrapolated, S21', backend = backend)
             ax.legend(loc = 'upper left')
             secax.legend(loc = 'lower right')
             fig.tight_layout()
@@ -2953,6 +2978,7 @@ class IEEEP370_TD_QM:
                 ax.set_ylabel('Amplitude (V)')
                 ax.legend(loc = 'upper right')
             fig.tight_layout()
+            _show_verbose_figure(self, fig, backend)
 
         QM = {'causality': {'value': causality_metric / 2., 'unit': 'mV',
                             'evaluation': ''},
@@ -3163,7 +3189,8 @@ class IEEEP370_SE_NZC_2xThru(IEEEP370):
             (Default: None)
 
         verbose :
-            view the process (default: False)
+            view the process (default: False). The figures follow the plotting
+            backend, are kept in `verbose_figures`, and with plotly are shown as drawn.
 
         args, kwargs:
             passed to :func:`Deembedding.__init__`
@@ -3179,6 +3206,7 @@ class IEEEP370_SE_NZC_2xThru(IEEEP370):
         self.use_z_instead_ifft = use_z_instead_ifft
         self.forced_z0_line = forced_z0_line
         self.verbose = verbose
+        self.verbose_figures = []
         # debug outputs
         self.x_end = None
         self.z_x = None
@@ -3284,7 +3312,8 @@ class IEEEP370_SE_NZC_2xThru(IEEEP370):
             self.z_x = z11x
 
             if self.verbose:
-                fig, (ax1, ax2) = subplots(2,1, sharex = True)
+                backend = _resolve_backend()
+                fig, (ax1, ax2) = _subplots(2, 1, backend, sharex = True)
                 fig.suptitle('Midpoint length and impedance determination')
                 ax1.plot(t21, label = 't21')
                 ax1.plot([x], [t21[x]], marker = 'o', linestyle = 'none',
@@ -3298,6 +3327,7 @@ class IEEEP370_SE_NZC_2xThru(IEEEP370):
                 ax2.set_xlim((x - 50, x + 50))
                 ax2.grid()
                 ax2.legend()
+                _show_verbose_figure(self, fig, backend)
 
             temp = Network(frequency = Frequency.from_f(f, 'Hz'), s = s, z0 = self.z0)
             temp.renormalize(z11x)
@@ -3716,7 +3746,8 @@ class IEEEP370_MM_NZC_2xThru(IEEEP370):
             (Default: None)
 
         verbose :
-            view the process (default: False)
+            view the process (default: False). The figures follow the plotting
+            backend, are kept in `verbose_figures`, and with plotly are shown as drawn.
 
         args, kwargs:
             passed to :func:`Deembedding.__init__`
@@ -3732,6 +3763,7 @@ class IEEEP370_MM_NZC_2xThru(IEEEP370):
         dummies = [self.s2xthru]
         self.use_z_instead_ifft = use_z_instead_ifft
         self.verbose = verbose
+        self.verbose_figures = []
         self.forced_z0_line_dd = forced_z0_line_dd
         self.forced_z0_line_cc = forced_z0_line_cc
         # debug outputs
@@ -3830,6 +3862,8 @@ class IEEEP370_MM_NZC_2xThru(IEEEP370):
                                 forced_z0_line = self.forced_z0_line_cc)
         self.x_end_cc = dm_cc.x_end
         self.z_x_cc = dm_cc.z_x
+
+        self.verbose_figures += dm_dd.verbose_figures + dm_cc.verbose_figures
 
         #convert back to single-ended
         mm_side1 = concat_ports([dm_dd.s_side1, dm_cc.s_side1], port_order = 'first')
@@ -4084,7 +4118,8 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
             calibration error (default: 1)
 
         verbose :
-            view the process (default: False)
+            view the process (default: False). The figures follow the plotting
+            backend, are kept in `verbose_figures`, and with plotly are shown as drawn.
 
         args, kwargs:
             passed to :func:`Deembedding.__init__`
@@ -4106,6 +4141,7 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
         self.NRP_enable = NRP_enable
         self.leadin = leadin
         self.verbose = verbose
+        self.verbose_figures = []
         self.flag_DC = False
         self.flag_df = False
         # debug outputs
@@ -4207,7 +4243,8 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
         if self.verbose:
             zdut1 = IEEEP370.getz(s11dut, f, z0)
             zdut2 = IEEEP370.getz(s22dut, f, z0)
-            fig, axs = subplots(1, 2, sharex = True, figsize=(2*6.4, 4.8))
+            backend = _resolve_backend()
+            fig, axs = _subplots(1, 2, backend, sharex = True, figsize=(2*6.4, 4.8))
             axs[0].plot(ifftshift(zdut1), label = 'DUT')
             axs[0].plot(ifftshift(self.z_side1), label = 'FIX-1')
             axs[0].plot(ifftshift(z1), color = 'k', linestyle = 'dashed', label = 'FIX-DUT-FIX')
@@ -4222,6 +4259,7 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
             axs[1].legend()
             axs[1].set_title('Right')
             axs[1].set_ylabel('Z (ohm)')
+            _show_verbose_figure(self, fig, backend)
         return errorbox1, errorbox2.flipped()
 
     def makeErrorBox_v8(self, s_dut: Network, s2x: Network, gamma: ndarray,
@@ -4262,13 +4300,15 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
                 self.z_side1 = IEEEP370.getz(errorbox1.s[:, 0, 0], f, z0)
         if self.verbose:
             zdut1 = IEEEP370.getz(s11dut, f, z0)
-            fig, axs = subplots(1, 1, sharex = True, figsize=(6.4, 4.8))
+            backend = _resolve_backend()
+            fig, axs = _subplots(1, 1, backend, sharex = True, figsize=(6.4, 4.8))
             axs.plot(ifftshift(zdut1), label = 'DUT')
             axs.plot(ifftshift(self.z_side1), label = 'FIX')
             axs.plot(ifftshift(z1), color = 'k', linestyle = 'dashed', label = 'FIX-DUT-FIX')
             axs.set_xlim((n-50, n+x*2+50))
             axs.legend()
             axs.set_ylabel('Z (ohm)')
+            _show_verbose_figure(self, fig, backend)
         return errorbox1
 
 
@@ -4336,7 +4376,8 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
             leadin1 = IEEEP370.shiftOnePort(temp1, -self.leadin, 0)
             leadin2 = IEEEP370.shiftOnePort(temp2, -self.leadin, 1)
             if self.verbose:
-                fig, axs = subplots(1, 2, sharex = True, figsize=(2*6.4, 4.8))
+                backend = _resolve_backend()
+                fig, axs = _subplots(1, 2, backend, sharex = True, figsize=(2*6.4, 4.8))
                 n = len(f)
                 zfdf1 = IEEEP370.getz(sfix_dut_fix.s[:, 0, 0], f, self.z0)
                 zlead1 = IEEEP370.getz(leadin1.s[:, 0, 0], f, self.z0)
@@ -4354,6 +4395,7 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
                 axs[1].legend()
                 axs[1].set_title('Right leadin')
                 axs[1].set_ylabel('Z (ohm)')
+                _show_verbose_figure(self, fig, backend)
 
         # calculate gamma
         #grabbing s21
@@ -4375,7 +4417,8 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
             #divide by 2*n + 1 to get prop constant per discrete unit length
             self.gamma = alpha_per_length_fit + 1j * beta_per_length # gamma without DC
         if self.verbose:
-            fig, axs = subplots(1, 2, figsize=(2*6.4, 4.8))
+            backend = _resolve_backend()
+            fig, axs = _subplots(1, 2, backend, figsize=(2*6.4, 4.8))
             fig.suptitle('Gamma determination')
             axs[0].plot(s2xthru.frequency.f_scaled, alpha_per_length, label = 'alpha per length')
             if self.bandwidth_limit != 0:
@@ -4394,6 +4437,7 @@ class IEEEP370_SE_ZC_2xThru(IEEEP370):
             axs[1].set_xlabel(f'Frequency ({s2xthru.frequency.unit})')
             axs[1].set_ylabel('Beta (rad/length)')
             axs[1].legend()
+            _show_verbose_figure(self, fig, backend)
 
         # extract error boxes
         # make the both error box
@@ -4722,7 +4766,8 @@ class IEEEP370_MM_ZC_2xThru(IEEEP370):
             calibration error (default: 1)
 
         verbose :
-            view the process (default: False)
+            view the process (default: False). The figures follow the plotting
+            backend, are kept in `verbose_figures`, and with plotly are shown as drawn.
 
         args, kwargs:
             passed to :func:`Deembedding.__init__`
@@ -4745,6 +4790,7 @@ class IEEEP370_MM_ZC_2xThru(IEEEP370):
         self.NRP_enable = NRP_enable
         self.leadin = leadin
         self.verbose = verbose
+        self.verbose_figures = []
         self.flag_DC = False
         self.flag_df = False
 
@@ -4874,6 +4920,8 @@ class IEEEP370_MM_ZC_2xThru(IEEEP370):
         self.x_end_cc = dm_cc.x_end
         self.z_side1_cc = dm_cc.z_side1
         self.z_side2_cc = dm_cc.z_side2
+        self.verbose_figures += dm_dd.verbose_figures + dm_cc.verbose_figures
+
         #convert back to single-ended
         mm_side1 = concat_ports([dm_dd.s_side1, dm_cc.s_side1], port_order = 'first')
         se_side1 = mm_side1.copy()
