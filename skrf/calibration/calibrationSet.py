@@ -19,6 +19,7 @@ CalibrationSet Class
 from itertools import product
 
 from ..networkSet import NetworkSet
+from ..plotting import _plotly_figure, _resolve_backend
 from .calibration import Calibration
 
 
@@ -96,10 +97,31 @@ class CalibrationSet:
         return NetworkSet([k.apply_cal(raw_ntwk) for k in self.cal_list],
             *args, **kwargs)
 
-    def plot_uncertainty_per_standard(self):
+    def plot_uncertainty_per_standard(self, *, ax=None, backend: str | None = None, **kwargs):
+        r"""
+        Plot the standard deviation of the measurements of each standard.
+
+        Parameters
+        ----------
+        ax : :class:`matplotlib.axes.Axes` or plotly Figure, optional
+            axes to draw on, default the current matplotlib axes, or a new
+            plotly Figure with the plotly backend.
+        backend : {'matplotlib', 'plotly'}, optional
+            plotting backend, default ``skrf.plotting.options.backend``.
+        \*\*kwargs : kwargs
+            passed to :meth:`~skrf.network.Network.plot_s_mag`
+
+        Returns
+        -------
+        None, or the plotly Figure with the plotly backend
         """
-        """
-        self.dankness('std_s','plot_s_mag')
+        backend = _resolve_backend(backend, ax)
+        if backend == 'plotly':
+            ax = _plotly_figure(ax)
+        for measured_set in self.measured_sets:
+            measured_set.std_s.plot_s_mag(ax=ax, backend=backend, **kwargs)
+        if backend == 'plotly':
+            return ax
 
     def dankness(self, prop, func, *args, **kwargs):
         """

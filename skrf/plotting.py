@@ -41,10 +41,9 @@ Backend selection
 take a per-call ``backend=`` argument.
 
 With plotly they return a ``plotly.graph_objects.Figure``; pass it as ``ax``
-to add traces to it. Passing a matplotlib Axes as ``ax`` selects matplotlib.
-Of the convenience functions below, only `subplot_params` and `signature`
-support plotly; the others, `Calibration.plot_caled_ntwks` and the VectorFitting plots
-always use matplotlib.
+to add traces to it. An ``ax`` that does not belong to the backend raises a
+``TypeError``. Of the convenience functions below, only `subplot_params` and
+`signature` support plotly; the others always use matplotlib.
 
 Convenience plotting functions
 -------------------------------

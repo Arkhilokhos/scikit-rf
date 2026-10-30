@@ -627,3 +627,47 @@ def test_plotly_title_centered(ntwk1: rf.Network):
                 rf.plotting.plot_smith(ntwk1.s[:, 0, 0], title="t", backend="plotly"),
                 rf.plotting.subplot_params(ntwk1, backend="plotly")):
         assert (fig.layout.title.x, fig.layout.title.xanchor, fig.layout.title.xref) == (0.5, "center", "paper")
+
+@pytest.fixture
+def two_port_cal() -> rf.calibration.TwelveTerm:
+    """Overdetermined two-port calibration."""
+    media = rf.media.DefinedGammaZ0(rf.Frequency(1, 10, 11, "GHz"))
+    ideals = [rf.network.two_port_reflect(media.short(), media.short()),
+              rf.network.two_port_reflect(media.open(), media.open()),
+              rf.network.two_port_reflect(media.load(0.2), media.load(0.2)), media.thru()]
+    measured = [rf.Network(frequency=i.frequency, s=i.s + 1e-3 * (k + 1)) for k, i in enumerate(ideals * 2)]
+    cal = rf.calibration.TwelveTerm(ideals=ideals * 2, measured=measured, n_thrus=1)
+    cal.run()
+    return cal
+
+@needs_plotly
+@pytest.mark.parametrize("cal", ["one_port_cal", "two_port_cal"])
+@pytest.mark.parametrize("attr", ["s_smith", "s_db"])
+def test_plotly_caled_ntwks(cal: str, attr: str, request):
+    cal = request.getfixturevalue(cal)
+    n_cal = len(cal.caled_ntwks)
+    assert cal.plot_caled_ntwks(attr) is None
+    axes = mpl.pyplot.gcf().axes
+    assert [ax.get_title() for ax in axes] == [f"S{cal.caled_ntwks[0]._fmt_trace_name(m, n)}"
+                                                for m, n in cal.caled_ntwks[0].port_tuples]
+    n_grid = 3 if attr == "s_smith" else 0  # the smith chart axes are lines too
+    assert all(len(ax.lines) == n_cal + n_grid for ax in axes) and axes[0].get_legend() is None
+    mpl.pyplot.close("all")
+    fig = cal.plot_caled_ntwks(attr, backend="plotly")
+    data = [t for t in fig.data if t.meta != "skrf_smith_chart"]
+    assert len(data) == n_cal * len(axes)
+    assert [a.text for a in fig.layout.annotations if a.text.startswith("S")] == [ax.get_title() for ax in axes]
+    assert not any(t.showlegend for t in data)
+    rf.plotting.options.backend = "plotly"
+    assert isinstance(cal.plot_caled_ntwks(attr), go.Figure)
+
+@needs_plotly
+def test_plotly_calibration_set_uncertainty(one_port_cal, mpl_axes):
+    measured_sets = [NetworkSet(one_port_cal.measured[k::3]) for k in range(3)]
+    cal_set = rf.calibration.calibrationSet.Dot(rf.calibration.OnePort, one_port_cal.ideals[:3], measured_sets)
+    assert cal_set.plot_uncertainty_per_standard(ax=mpl_axes) is None
+    fig = cal_set.plot_uncertainty_per_standard(backend="plotly")
+    assert_plotly_parity(fig, mpl_axes, x_scale=1e9)
+    assert cal_set.plot_uncertainty_per_standard(ax=fig, backend="plotly") is fig
+    with pytest.raises(TypeError, match="cannot be used with backend='plotly'"):
+        cal_set.plot_uncertainty_per_standard(ax=mpl_axes, backend="plotly")

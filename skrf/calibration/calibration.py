@@ -143,7 +143,7 @@ from ..network import (
     zipfile,
 )
 from ..networkSet import NetworkSet
-from ..plotting import _get_axes, _plotly_figure, _resolve_backend
+from ..plotting import _get_axes, _plotly_figure, _plotly_subplots, _resolve_backend, subplots
 
 logger = getLogger(__name__)
 
@@ -1047,12 +1047,15 @@ class Calibration:
             return ax
 
 
-    def plot_caled_ntwks(self, attr: str = 's_smith', show_legend: bool = False, **kwargs):
+    def plot_caled_ntwks(self, attr: str = 's_smith', show_legend: bool = False, *,
+                         backend: str | None = None, **kwargs):
         r"""
         Plot corrected calibration standards.
 
         Given that the calibration is overdetermined, this may be used
         as a heuristic verification of calibration quality.
+
+        Each port pair is plotted on its own subplot of a new figure.
 
         Parameters
         ----------
@@ -1061,17 +1064,31 @@ class Calibration:
             Default is 's_smith'
         show_legend : bool, optional
             draw a legend or not. Default is False.
+        backend : {'matplotlib', 'plotly'}, optional
+            plotting backend, default ``skrf.plotting.options.backend``.
         \*\*kwargs : kwargs
             passed to the plot method of Network
+
+        Returns
+        -------
+        None, or the plotly Figure with the plotly backend
         """
         ns = NetworkSet(self.caled_ntwks)
-        fig, axes = util.subplots(figsize=(8,8))
-
+        port_tuples = ns[0].port_tuples
+        titles = [f"S{ns[0]._fmt_trace_name(m, n)}" for m, n in port_tuples]
         kwargs.update({'show_legend':show_legend})
 
-        for ax ,(m, n) in zip(axes, ns[0].port_tuples):
-            ax.set_title(f"S{ns.ntwk_set[0]._fmt_trace_name(m, n)}")
-            ns.__getattribute__('plot_'+attr)(m, n, **kwargs)
+        if _resolve_backend(backend) == 'plotly':
+            figs = [ns.__getattribute__('plot_'+attr)(m, n, backend='plotly', **kwargs) for m, n in port_tuples]
+            # 100 pixels per inch of the matplotlib figure size
+            return _plotly_subplots(figs, cols=ns[0].nports, subplot_titles=titles).update_layout(width=800,
+                                                                                                   height=800)
+
+        fig, axes = subplots(ns[0].nports, ns[0].nports, figsize=(8,8), squeeze=False)
+
+        for ax, title, (m, n) in zip(axes.flat, titles, port_tuples):
+            ax.set_title(title)
+            ns.__getattribute__('plot_'+attr)(m, n, ax=ax, backend='matplotlib', **kwargs)
 
         fig.tight_layout()
 
