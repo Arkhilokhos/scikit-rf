@@ -831,3 +831,28 @@ def test_plotly_verbose_figures(p370_networks, make, monkeypatch):
         titles = [ax.get_title() for ax in mpl_fig.axes if ax.get_title()]
         assert [a.text for a in fig.layout.annotations if a.text in titles] == titles
     mpl.pyplot.close("all")
+
+def test_legend_helpers(ntwk1: rf.Network, mpl_axes):
+    ntwk1.plot_s_db(ax=mpl_axes)
+    rf.plotting.add_markers_to_lines(ax=mpl_axes, markevery=5)
+    assert [line.get_marker() for line in mpl_axes.lines] == ["o", "D", "s", "+"]
+    rf.plotting.scrape_legend(2, ax=mpl_axes)
+    assert [t.get_text() for t in mpl_axes.get_legend().get_texts()] == ["ntwk1, S11", "ntwk1, S22"]
+    rf.plotting.legend_off(ax=mpl_axes)
+    assert not mpl_axes.get_legend().get_visible()
+
+@needs_plotly
+def test_plotly_legend_helpers(ntwk1: rf.Network):
+    fig = ntwk1.plot_s_db(backend="plotly")
+    assert rf.plotting.add_markers_to_lines(ax=fig, markevery=5, backend="plotly") is fig
+    assert [t.marker.symbol for t in fig.data] == ["circle", "diamond", "square", "cross"]
+    assert {(t.mode, t.marker.maxdisplayed) for t in fig.data} == {("lines+markers", -(-len(ntwk1) // 5))}
+    assert rf.plotting.scrape_legend(2, ax=fig, backend="plotly") is fig
+    assert [t.name for t in fig.data if t.showlegend] == ["ntwk1, S11", "ntwk1, S22"]
+    assert rf.plotting.legend_off(ax=fig, backend="plotly").layout.showlegend is False
+    with pytest.raises(TypeError, match="cannot be used with backend='matplotlib'"):
+        rf.plotting.legend_off(ax=fig)
+    # the smith chart grid is not a line to mark
+    fig = ntwk1.plot_s_smith(0, 0, backend="plotly")
+    rf.plotting.add_markers_to_lines(ax=fig, backend="plotly")
+    assert [t.mode for t in fig.data if t.meta == "skrf_smith_chart"] == ["lines"] * len(_smith_grid_traces(fig))

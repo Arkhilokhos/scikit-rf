@@ -594,7 +594,7 @@ _PLOTLY_ALIASES = {'c': 'color', 'ls': 'linestyle', 'lw': 'linewidth', 'ms': 'ma
 _PLOTLY_COLORS = {'b': 'blue', 'g': 'green', 'r': 'red', 'c': 'cyan', 'm': 'magenta', 'y': 'yellow',
                   'k': 'black', 'w': 'white'}
 _PLOTLY_LINESTYLES = {'-': 'solid', '--': 'dash', ':': 'dot', '-.': 'dashdot', 'dashed': 'dash', 'dotted': 'dot'}
-_PLOTLY_MARKERS = {'o': 'circle', '.': 'circle', 's': 'square', 'd': 'diamond', '+': 'cross',
+_PLOTLY_MARKERS = {'o': 'circle', '.': 'circle', 's': 'square', 'd': 'diamond', 'D': 'diamond', '+': 'cross',
                    '^': 'triangle-up', 'v': 'triangle-down', '*': 'star'}
 _PLOTLY_NONE = ('', ' ', 'none', 'None')
 
@@ -1453,10 +1453,9 @@ def save_all_figs(dir: str = './', format: None | list[str] = None,
 
 saf = save_all_figs
 
-@axes_kwarg
 def add_markers_to_lines(ax: Axes = None,
                          marker_list: list = None,
-                         markevery: int = 10):
+                         markevery: int = 10, *, backend: str | None = None):
     """
     Add markers to existing lings on a plot.
 
@@ -1476,18 +1475,36 @@ def add_markers_to_lines(ax: Axes = None,
     markevery : int, optional.
         markevery number of points with a marker.
         Default is 10.
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.plotting.options.backend``.
+        With plotly, `ax` is the plotly Figure to add markers to.
 
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
     """
     marker_list = marker_list if marker_list else ['o', 'D', 's', '+', 'x']
 
+    if _resolve_backend(backend, ax) == 'plotly':
+        ax = _plotly_figure(ax)
+        lines = [t for t in ax.data if t.type == 'scatter' and t.meta != 'skrf_smith_chart'
+                 and 'lines' in (t.mode or 'lines')]
+        if len(lines) > len(marker_list):
+            marker_list *= 3
+        for line, marker in zip(lines, marker_list):
+            # marker.maxdisplayed thins the markers like markevery
+            line.update(mode='lines+markers', marker_symbol=_PLOTLY_MARKERS.get(marker, marker),
+                        marker_maxdisplayed=-(-len(line.x) // markevery))
+        return ax
+
+    ax = _get_axes(ax)
     lines = ax.get_lines()
     if len(lines) > len (marker_list ):
         marker_list *= 3
     [k[0].set_marker(k[1]) for k in zip(lines, marker_list)]
     [line.set_markevery(markevery) for line in lines]
 
-@axes_kwarg
-def legend_off(ax: Axes = None):
+def legend_off(ax: Axes = None, *, backend: str | None = None):
     """
     Turn off the legend for a given axes.
 
@@ -1498,12 +1515,20 @@ def legend_off(ax: Axes = None):
     ax : matplotlib.Axes or None, optional
         axis to operate on.
         Default is None for current axe gca()
-    """
-    ax.legend_.set_visible(0)
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.plotting.options.backend``.
+        With plotly, `ax` is the plotly Figure whose legends are turned off.
 
-@axes_kwarg
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
+    """
+    if _resolve_backend(backend, ax) == 'plotly':
+        return _plotly_figure(ax).update_layout(showlegend=False)
+    _get_axes(ax).legend_.set_visible(0)
+
 def scrape_legend(n: int | None = None,
-                  ax: Axes = None):
+                  ax: Axes = None, *, backend: str | None = None):
     """
     Scrape a legend with redundant labels.
 
@@ -1519,9 +1544,22 @@ def scrape_legend(n: int | None = None,
     ax : matplotlib.Axes or None, optional
         axis to operate on.
         Default is None for current axe gca()
-    """
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.plotting.options.backend``.
+        With plotly, `ax` is the plotly Figure whose legend entries are scraped.
 
-    handles, labels = ax.get_legend_handles_labels()
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
+    """
+    plotly = _resolve_backend(backend, ax) == 'plotly'
+    if plotly:
+        ax = _plotly_figure(ax)
+        handles = [trace for trace in ax.data if trace.showlegend is not False and trace.name is not None]
+        labels = [trace.name for trace in handles]
+    else:
+        ax = _get_axes(ax)
+        handles, labels = ax.get_legend_handles_labels()
 
     if n is None:
         n =len ( set(labels))
@@ -1530,6 +1568,10 @@ def scrape_legend(n: int | None = None,
         raise ValueError('number of entries is too large')
 
     k_list = [int(k) for k in np.linspace(0,len(handles)-1,n)]
+    if plotly:
+        for k, trace in enumerate(handles):
+            trace.showlegend = k in k_list
+        return ax
     ax.legend([handles[k] for k in k_list], [labels[k] for k in k_list])
 
 
