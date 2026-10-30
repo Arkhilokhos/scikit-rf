@@ -143,7 +143,7 @@ from ..network import (
     zipfile,
 )
 from ..networkSet import NetworkSet
-from ..plotting import _matplotlib_only, axes_kwarg
+from ..plotting import _get_axes, _plotly_figure, _resolve_backend
 
 logger = getLogger(__name__)
 
@@ -1006,10 +1006,23 @@ class Calibration:
 
         write(file,self, *args, **kwargs)
 
-    @axes_kwarg
-    def plot_calibration_errors(self, *args, ax: Axes = None, **kwargs):
-        """
+    def plot_calibration_errors(self, *args, ax: Axes = None, backend: str | None = None, **kwargs):
+        r"""
         Plot biased, unbiased and total error in dB scaled.
+
+        Parameters
+        ----------
+        ax : :class:`matplotlib.axes.Axes` or plotly Figure, optional
+            axes to draw on, default the current matplotlib axes, or a new
+            plotly Figure with the plotly backend.
+        backend : {'matplotlib', 'plotly'}, optional
+            plotting backend, default ``skrf.plotting.options.backend``.
+        \*\*kwargs : kwargs
+            passed to :meth:`NetworkSet.plot_s_db`
+
+        Returns
+        -------
+        None, or the plotly Figure with the plotly backend
 
         See Also
         --------
@@ -1017,16 +1030,21 @@ class Calibration:
         unbiased_error
         total_error
         """
-
-
-        _matplotlib_only("Calibration.plot_calibration_errors", kwargs)
+        backend = _resolve_backend(backend, ax)
+        ax = _plotly_figure(ax) if backend == 'plotly' else _get_axes(ax)
         port_list = self.biased_error.port_tuples
         for m,n in port_list:
-            ax.set_title(f"S{self.biased_error.ntwk_set[0]._fmt_trace_name(m,n)}")
-            self.unbiased_error.plot_s_db(m,n,**kwargs)
-            self.biased_error.plot_s_db(m,n,**kwargs)
-            self.total_error.plot_s_db(m,n,**kwargs)
-            ax.set_ylim(-100,0)
+            title = f"S{self.biased_error._fmt_trace_name(m,n)}"
+            self.unbiased_error.plot_s_db(m,n,ax=ax,backend=backend,**kwargs)
+            self.biased_error.plot_s_db(m,n,ax=ax,backend=backend,**kwargs)
+            self.total_error.plot_s_db(m,n,ax=ax,backend=backend,**kwargs)
+            if backend == 'plotly':
+                ax.update_layout(title_text=title, yaxis_range=[-100,0])
+            else:
+                ax.set_title(title)
+                ax.set_ylim(-100,0)
+        if backend == 'plotly':
+            return ax
 
 
     def plot_caled_ntwks(self, attr: str = 's_smith', show_legend: bool = False, **kwargs):
@@ -1071,15 +1089,22 @@ class Calibration:
             Network property to plot, ie 's_db', 's_smith', etc.
             Default is 's_db'
         \*\*kwargs : kwargs
-            passed to the plot method of Network
+            passed to the plot method of Network, including ``ax`` and
+            ``backend`` (default ``skrf.plotting.options.backend``)
+
+        Returns
+        -------
+        None, or the plotly Figure with the plotly backend
 
         See Also
         --------
         Calibration.residual_networks
         """
 
-        _matplotlib_only("Calibration.plot_residuals", kwargs)
-        NetworkSet(self.residual_ntwks).__getattribute__('plot_'+attr)(**kwargs)
+        kwargs['backend'] = _resolve_backend(kwargs.get('backend'), kwargs.get('ax'))
+        out = NetworkSet(self.residual_ntwks).__getattribute__('plot_'+attr)(**kwargs)
+        if kwargs['backend'] == 'plotly':
+            return out
 
 
 

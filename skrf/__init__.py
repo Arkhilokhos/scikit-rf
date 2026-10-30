@@ -30,7 +30,7 @@ from . import (
 from .calibration import calibrationSet, deembedding
 from .frequency import Frequency
 from .network import Network
-from .plotting import options, stylely
+from .plotting import stylely
 
 
 def setup_plotting():

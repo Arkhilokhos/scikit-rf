@@ -35,15 +35,15 @@ Plots and Charts
 
 Backend selection
 -----------------
-``skrf.plotting.options`` (also ``skrf.options``) holds the global plotting
-backend, ``options.plotting.backend``: ``"matplotlib"`` (default) or
-``"plotly"`` (needs ``pip install scikit-rf[plotly]``). The general-purpose
-plot methods also take a per-call ``backend=`` argument.
+``skrf.plotting.options.backend`` holds the global plotting backend:
+``"matplotlib"`` (default) or ``"plotly"`` (needs
+``pip install scikit-rf[plotly]``). The general-purpose plot methods also
+take a per-call ``backend=`` argument.
 
 With plotly they return a ``plotly.graph_objects.Figure``; pass it as ``ax``
 to add traces to it. Passing a matplotlib Axes as ``ax`` selects matplotlib.
 Of the convenience functions below, only `subplot_params` supports plotly;
-the others, and the Calibration and VectorFitting plots,
+the others, `Calibration.plot_caled_ntwks` and the VectorFitting plots
 always use matplotlib.
 
 Convenience plotting functions
@@ -71,7 +71,6 @@ from contextlib import suppress
 from functools import partial, wraps
 from logging import getLogger
 from numbers import Number
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -128,8 +127,8 @@ class _PlottingOptions:
         self._backend = _validate_backend(value)
 
 
-# global settings, also available as skrf.options
-options = SimpleNamespace(plotting=_PlottingOptions())
+# global plotting settings
+options = _PlottingOptions()
 
 
 def _is_plotly_figure(ax) -> bool:
@@ -146,7 +145,7 @@ def _resolve_backend(backend: str | None = None, ax=None) -> str:
     """
     if backend is None:
         if ax is None:
-            return options.plotting.backend
+            return options.backend
         return 'plotly' if _is_plotly_figure(ax) else 'matplotlib'
     if ax is not None and (_validate_backend(backend) == 'plotly') != _is_plotly_figure(ax):
         raise TypeError(f"ax of type {type(ax).__name__} cannot be used with backend={backend!r}")
@@ -315,7 +314,7 @@ def smith(smithR: Number = 1, chart_type: str = 'z', draw_labels: bool = False,
         draw VSWR circles. If True, default values are used.
         Default is None.
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         `border` is not used with plotly.
 
     Returns
@@ -550,7 +549,7 @@ def plot_rectangular(x: NumberLike, y: NumberLike,
     ax : :class:`matplotlib.axes.AxesSubplot` object or None, optional.
         axes to draw on. Default is None (creates a new figure)
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `ax` may be a plotly Figure to add the trace to.
     \*args, \*\*kwargs : passed to pylab.plot (or :class:`plotly.graph_objects.Scatter`)
 
@@ -808,7 +807,7 @@ def plot_polar(theta: NumberLike, r: NumberLike,
     ax : :class:`matplotlib.axes.AxesSubplot` object or None.
         axes to draw on. Default is None (creates a new figure).
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `ax` may be a plotly Figure to add the trace to,
         `theta` is in radians, `y_label` titles the radial axis, and
         `x_label` and `axis_equal` are not used.
@@ -906,7 +905,7 @@ def plot_complex_rectangular(z: NumberLike,
     ax : :class:`matplotlib.axes.AxesSubplot` object or None.
         axes to draw on. Default is None (creates a new figure)
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `ax` may be a plotly Figure to add the trace to.
     \*\*kwargs : passed to pylab.plot (or :class:`plotly.graph_objects.Scatter`)
 
@@ -956,7 +955,7 @@ def plot_complex_polar(z: NumberLike,
     ax : :class:`matplotlib.axes.AxesSubplot` object or None.
         axes to draw on. Default is None (creates a new figure).
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         See :func:`plot_polar`.
     \*\*kwargs : passed to pylab.plot (or :class:`plotly.graph_objects.Scatterpolar`)
 
@@ -1017,7 +1016,7 @@ def plot_smith(s: NumberLike, smith_r: float = 1, chart_type: str = 'z',
     draw_labels : Boolean
         annotate chart with impedance values
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `ax` may be a plotly Figure to add the trace to.
     \*\*kwargs : passed to pylab.plot (or :class:`plotly.graph_objects.Scatter`)
 
@@ -1086,7 +1085,7 @@ def subplot_params(ntwk: Network, param: str = 's', proj: str = 'db',
     subplot_kw : dict, optional
         by default {}
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `subplot_kw` is passed to :func:`plotly.subplots.make_subplots`,
         and `newfig` and `keep_it_tight` are not used.
 
@@ -1499,7 +1498,7 @@ def plot_s_error(netw: Network, other: Network,
     db : bool
         If True, plot :math:`20\log_{10}(\delta)`. Default is False.
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``
+        plotting backend, default ``skrf.plotting.options.backend``
     \*args, \*\*kwargs :
         Passed to :meth:`~skrf.frequency.Frequency.plot`.
 
@@ -1575,7 +1574,7 @@ def plot_s_smith(netw: Network, m=None, n=None,r=1, ax=None, show_legend=True,\
     draw_vswr : list of numbers, Boolean or None
         draw VSWR circles. If True, default values are used.
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `ax` may be a plotly Figure to add the traces to.
 
     \*args : arguments, optional
@@ -1869,7 +1868,7 @@ def plot_uncertainty_bounds_component(
          errorbar plot command depending on value of type
          (to :class:`plotly.graph_objects.Scatter` with plotly).
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `ax` may be a plotly Figure to add the traces to.
     \*\*kwargs :
         passed to Network.plot_s_re command used to plot mean response
@@ -2013,7 +2012,7 @@ def plot_minmax_bounds_component(self: NetworkSet, attribute: PrimaryPropertiesT
          errorbar plot command depending on value of type
          (to :class:`plotly.graph_objects.Scatter` with plotly).
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `ax` may be a plotly Figure to add the traces to.
     \*\*kwargs :
         passed to Network.plot_s_re command used to plot mean response
@@ -2120,7 +2119,7 @@ def plot_violin(self: NetworkSet, attribute: PrimaryPropertiesT, m: int = 0, n: 
     ax : matplotlib axes object
         Axes to plot on. Default is None.
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `ax` may be a plotly Figure to add the violins to; `showmedians`
         shows a box with the median, `points` and `showextrema` are ignored, and
         `quantiles` and `bw_method` are not supported.
@@ -2230,7 +2229,7 @@ def plot_uncertainty_decomposition(self: NetworkSet, m: int = 0, n: int = 0, *,
     n :
         second s-parameter index
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``
+        plotting backend, default ``skrf.plotting.options.backend``
     \*\*kwargs :
         passed to :meth:`~skrf.network.Network.plot_s_mag`
 
@@ -2268,7 +2267,7 @@ def plot_logsigma(self: NetworkSet, label_axis: bool = True, *args, backend: str
     label_axis : bool, optional
         Default is True.
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``
+        plotting backend, default ``skrf.plotting.options.backend``
     \*args, \*\*kwargs : arguments
         passed to self.std_s.plot_s_db()
 
@@ -2398,7 +2397,7 @@ def plot_contour(freq: Frequency,
     title : str, optional
         Figure title. The default is ''.
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `cmap` is a plotly colorscale name.
     \*\*kwargs : dict
         Other parameters passed to `matplotlib.pyplot.subplots()`
@@ -2487,7 +2486,7 @@ def plot_prop_complex(netw: Network, prop_name: str,
     y_label : string, optional
         the y-axis label
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `ax` may be a plotly Figure to add the traces to.
 
     \*args,\**kwargs : arguments, keyword arguments
@@ -2566,7 +2565,7 @@ def plot_prop_polar(netw: Network, prop_name: str,
     y_label : string, optional
         the y-axis label
     backend : {'matplotlib', 'plotly'}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `ax` may be a plotly Figure to add the traces to.
 
     \*args,\**kwargs : arguments, keyword arguments

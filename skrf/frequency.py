@@ -737,7 +737,7 @@ class Frequency:
 
         This plots whatever is given vs. `self.f_scaled` and then
         calls `labelXAxis`. With the plotly `backend` (default
-        ``skrf.options.plotting.backend``), it draws on the plotly Figure
+        ``skrf.plotting.options.backend``), it draws on the plotly Figure
         `ax`, or a new one, and returns it.
         """
 

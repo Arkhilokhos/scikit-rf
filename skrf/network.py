@@ -5182,7 +5182,7 @@ class Network:
     logx : Boolean, optional
         Enable logarithmic x-axis, default off
     backend : {{'matplotlib', 'plotly'}}, optional
-        plotting backend, default ``skrf.options.plotting.backend``.
+        plotting backend, default ``skrf.plotting.options.backend``.
         With plotly, `ax` may be a plotly Figure to add the traces to.
     \**kwargs : arguments, keyword arguments
         passed to :func:`matplotlib.plot` (or :class:`plotly.graph_objects.Scatter`)

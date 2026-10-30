@@ -137,7 +137,7 @@ def test_generated_violin_plots(ntwk_set_zip: NetworkSet, generated_functions: s
             fig = ntwk_set_zip.plot_violin(generated_functions)
 
 
-# Plotting backend selection (skrf.options.plotting.backend) and the plotly backend
+# Plotting backend selection (skrf.plotting.options.backend) and the plotly backend
 
 try:
     import plotly.graph_objects as go
@@ -150,7 +150,7 @@ needs_plotly = pytest.mark.skipif(go is None, reason="plotly not installed")
 @pytest.fixture(autouse=True)
 def reset_plotting_backend():
     yield
-    rf.options.plotting.backend = "matplotlib"
+    rf.plotting.options.backend = "matplotlib"
 
 @pytest.fixture
 def mpl_axes():
@@ -175,12 +175,12 @@ def assert_plotly_parity(fig, ax, x_scale: float = 1.0):
     assert fig.layout.yaxis.title.text == (ax.get_ylabel() or None)
 
 def test_backend_option():
-    assert rf.options.plotting.backend == "matplotlib"
-    rf.options.plotting.backend = "plotly"
-    assert rf.options.plotting.backend == "plotly"
+    assert rf.plotting.options.backend == "matplotlib"
+    rf.plotting.options.backend = "plotly"
+    assert rf.plotting.options.backend == "plotly"
     with pytest.raises(ValueError, match="matplotlib.*plotly"):
-        rf.options.plotting.backend = "bokeh"
-    assert rf.options.plotting.backend == "plotly"
+        rf.plotting.options.backend = "bokeh"
+    assert rf.plotting.options.backend == "plotly"
 
 def test_plotly_missing_raises_import_error(ntwk1: rf.Network, monkeypatch):
     for mod in [m for m in sys.modules if m.split(".")[0] == "plotly"]:
@@ -191,12 +191,12 @@ def test_plotly_missing_raises_import_error(ntwk1: rf.Network, monkeypatch):
 
 @needs_plotly
 def test_plotly_not_implemented_does_not_fall_back(ntwk_set_zip: NetworkSet):
-    rf.options.plotting.backend = "plotly"
+    rf.plotting.options.backend = "plotly"
     with pytest.raises(NotImplementedError, match="plotly"):
         ntwk_set_zip.plot_violin("s_db", quantiles=[0.5])
 
 def test_matplotlib_unchanged_under_global_plotly(ntwk1: rf.Network, ntwk_set_zip: NetworkSet, mpl_axes):
-    rf.options.plotting.backend = "plotly"
+    rf.plotting.options.backend = "plotly"
     # per-call override keeps the matplotlib return values
     assert ntwk1.plot_s_db(backend="matplotlib") is None
     assert ntwk1.frequency.plot(ntwk1.s_db[:, 0, 0], backend="matplotlib") is None
@@ -221,7 +221,7 @@ def test_plot_prop_keyword_args(ntwk1: rf.Network, mpl_axes):
 @needs_plotly
 def test_plotly_does_not_import_matplotlib():
     loaded = _modules_after(
-        "import skrf as rf; rf.options.plotting.backend = 'plotly'; n = rf.data.ring_slot; "
+        "import skrf as rf; rf.plotting.options.backend = 'plotly'; n = rf.data.ring_slot; "
         "n.plot_s_db(); n.plot_s_time_db(); n.frequency.plot(n.s_db); n.plot_passivity(); "
         "n.plot_s_smith(); n.plot_s_polar(); n.plot_s_complex(); n.plot_it_all(); "
         "ns = rf.networkSet.NetworkSet([n, n]); ns.plot_uncertainty_bounds_s_db(); ns.plot_minmax_bounds_s_db(); "
@@ -458,3 +458,45 @@ def test_plotly_plot_contour(monkeypatch):
     (fig,) = shown
     assert [t.type for t in fig.data] == ["contour"] + ["scatter"] * 4
     assert np.isnan(fig.data[0].z).any() and fig.layout.title.text == "t"
+
+@pytest.fixture
+def one_port_cal() -> rf.calibration.OnePort:
+    """Overdetermined one-port calibration, with named standards for the error NetworkSets."""
+    media = rf.media.DefinedGammaZ0(rf.Frequency(1, 10, 11, "GHz"))
+    ideals = [media.short(name="short"), media.open(name="open"), media.load(0.2, name="load")]
+    measured = [rf.Network(frequency=i.frequency, s=i.s + 1e-3 * (k + 1), name=i.name)
+                for k, i in enumerate(ideals * 2)]
+    cal = rf.calibration.OnePort(ideals=ideals * 2, measured=measured)
+    cal.run()
+    return cal
+
+def test_calibration_plots_matplotlib(one_port_cal, mpl_axes):
+    other = mpl_axes.figure.add_subplot(2, 1, 2)  # now the current axes, not the one passed in
+    assert one_port_cal.plot_calibration_errors(ax=mpl_axes) is None
+    assert len(mpl_axes.lines) == 3 and len(other.lines) == 0
+    assert mpl_axes.get_title() == "S11" and mpl_axes.get_ylim() == (-100, 0)
+    assert one_port_cal.plot_residuals(ax=other) is None
+    assert len(other.lines) == len(one_port_cal.residual_ntwks)
+
+@needs_plotly
+def test_plotly_calibration_errors(one_port_cal, mpl_axes):
+    one_port_cal.plot_calibration_errors(ax=mpl_axes)
+    fig = one_port_cal.plot_calibration_errors(backend="plotly")
+    assert_plotly_parity(fig, mpl_axes, x_scale=1e9)
+    assert fig.layout.title.text == "S11" and tuple(fig.layout.yaxis.range) == (-100, 0)
+    # global option, and adding to an existing figure
+    rf.plotting.options.backend = "plotly"
+    assert one_port_cal.plot_calibration_errors(ax=fig) is fig
+    assert len(fig.data) == 6
+    with pytest.raises(TypeError):
+        one_port_cal.plot_calibration_errors(ax=mpl_axes, backend="plotly")
+
+@needs_plotly
+@pytest.mark.parametrize("attr", ["s_db", "s_smith"])
+def test_plotly_calibration_residuals(one_port_cal, attr: str, mpl_axes):
+    one_port_cal.plot_residuals(attr, ax=mpl_axes)
+    fig = one_port_cal.plot_residuals(attr, backend="plotly")
+    assert isinstance(fig, go.Figure)
+    assert len([t for t in fig.data if t.name]) == len(one_port_cal.residual_ntwks)
+    if attr == "s_db":
+        assert_plotly_parity(fig, mpl_axes, x_scale=1e9)
