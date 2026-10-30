@@ -132,7 +132,8 @@ options = _PlottingOptions()
 
 def _is_plotly_figure(ax) -> bool:
     # checked by name so that plotly is not imported
-    return any(c.__module__.startswith('plotly.') and c.__name__ == 'Figure' for c in type(ax).__mro__)
+    return isinstance(ax, _PlotlyAxes) or any(c.__module__.startswith('plotly.') and c.__name__ == 'Figure'
+                                              for c in type(ax).__mro__)
 
 
 def _resolve_backend(backend: str | None = None, ax=None) -> str:
@@ -602,6 +603,8 @@ def _plotly_figure(ax=None, **layout):
     go = _import_plotly()
     if ax is None:
         return go.Figure(layout={**_PLOTLY_LAYOUT, **layout})
+    if isinstance(ax, _PlotlyAxes):
+        return ax.fig
     if not isinstance(ax, go.Figure):
         raise TypeError(f"the plotly backend needs a plotly Figure as ax, not {type(ax).__name__}")
     return ax
@@ -617,7 +620,7 @@ def _plotly_kwargs(args: tuple, kwargs: dict) -> dict:
     line = dict(kw.pop('line', {}))
     markers = dict(marker) if isinstance(marker, dict) else {}  # a plotly marker dict is passed on
     if color is not None:
-        line['color'] = markers['color'] = _PLOTLY_COLORS.get(color, color)
+        line['color'] = markers['color'] = _plotly_color(color)
     if linestyle not in _PLOTLY_NONE + (None,):
         line['dash'] = _PLOTLY_LINESTYLES.get(linestyle, linestyle)
     if 'linewidth' in kw:
@@ -635,6 +638,16 @@ def _plotly_kwargs(args: tuple, kwargs: dict) -> dict:
         mode.append('markers')
     kw.setdefault('mode', '+'.join(mode) or 'none')
     return {**kw, 'line': line, 'marker': markers}
+
+
+def _plotly_color(color):
+    """plotly color for a matplotlib color, including gray levels such as '0.5'."""
+    if isinstance(color, str):
+        try:
+            return 'rgb({0},{0},{0})'.format(round(255 * float(color)))
+        except ValueError:
+            return _PLOTLY_COLORS.get(color, color)
+    return color
 
 
 def _plotly_frequency_x(fig, frequency: Frequency) -> tuple[np.ndarray, str]:
@@ -725,6 +738,193 @@ def _plotly_subplots(figs: list, cols: int, **kwargs):
         for annotation in sub.layout.annotations:
             fig.add_annotation(annotation, row=row, col=col)
     return fig
+
+
+class _PlotlyLine:
+    """A plotly trace as the matplotlib Line2D of :attr:`_PlotlyAxes.lines`."""
+
+    def __init__(self, trace):
+        self.trace = trace
+
+    def get_xdata(self) -> np.ndarray:
+        return np.asarray(self.trace.x)
+
+    def get_ydata(self) -> np.ndarray:
+        return np.asarray(self.trace.y)
+
+
+class _PlotlyAxes:
+    """
+    A panel of a :class:`_PlotlyFigure`, with the matplotlib Axes methods used by the
+    multi-panel figures of scikit-rf, so that the same code draws them with both backends.
+
+    It draws on its own plotly Figure `fig`, and plot functions take it as a plotly `ax`.
+    """
+
+    def __init__(self, pos: tuple[int, int, int]):
+        self.pos, self.title, self.has_legend, self.fig = pos, None, False, _plotly_figure()
+
+    @property
+    def lines(self) -> list[_PlotlyLine]:
+        return [_PlotlyLine(trace) for trace in self.fig.data]
+
+    def plot(self, x, y=None, **kwargs):
+        if y is None:
+            x, y = np.arange(len(x)), x
+        if str(kwargs.get('label')).startswith('_'):  # matplotlib's labels without a legend entry
+            del kwargs['label']
+        _plotly_rect(x, y, ax=self.fig, **kwargs)
+
+    def set_title(self, title: str):
+        self.title = title
+
+    def set_xlabel(self, label: str):
+        self.fig.update_xaxes(title_text=label)
+
+    def set_ylabel(self, label: str):
+        self.fig.update_yaxes(title_text=label)
+
+    def set_xlim(self, lim):
+        self.fig.update_xaxes(range=list(lim))
+
+    def set_ylim(self, lim):
+        self.fig.update_yaxes(range=list(lim))
+
+    def legend(self, *args, **kwargs):
+        self.has_legend = True  # placed where it covers the least data, see _plotly_legend_position
+
+    def grid(self, *args, **kwargs):
+        pass  # plotly draws a grid by default
+
+
+# candidate legend positions in a plot area, as fractions of its width and height, in order of preference
+_PLOTLY_LEGEND_SPOTS = ((1, 1), (0, 1), (1, 0), (0, 0), (1, .5), (0, .5))
+_PLOTLY_LEGEND_FONT = 10
+
+
+def _plotly_legend_position(fig, width: float, height: float) -> tuple[float, float]:
+    """
+    Position of the legend of the plotly Figure `fig`, with a plot area of `width` x `height` pixels,
+    among :data:`_PLOTLY_LEGEND_SPOTS`, where it covers the fewest data points, like matplotlib's 'best'.
+    """
+    names = [str(trace.name) for trace in fig.data if trace.showlegend]
+    # legend size estimated from the font size: about 0.6 em per character and 1.8 em per entry
+    box_w = min(1., (40 + 0.6 * _PLOTLY_LEGEND_FONT * max(map(len, names), default=0)) / width)
+    box_h = min(1., (10 + 1.8 * _PLOTLY_LEGEND_FONT * len(names)) / height)
+    # the traces resampled along their length, so that lines with few points still count where they pass
+    points = []
+    for trace in fig.data:
+        if trace.x is None or trace.y is None or len(trace.x) == 0:
+            continue
+        x, y = np.asarray(trace.x, dtype=float), np.asarray(trace.y, dtype=float)
+        t = np.linspace(0, len(x) - 1, 200)
+        points.append(np.column_stack([np.interp(t, np.arange(len(x)), x), np.interp(t, np.arange(len(y)), y)]))
+    if not points:
+        return _PLOTLY_LEGEND_SPOTS[0]
+    points = np.concatenate(points)
+    points = points[np.isfinite(points).all(axis=1)]
+    # in fractions of the plot area, from the axis ranges if set, else the data range as plotly's autorange
+    for i, axis in enumerate((fig.layout.xaxis, fig.layout.yaxis)):
+        lo, hi = axis.range if axis.range is not None else (points[:, i].min(), points[:, i].max())
+        points[:, i] = (points[:, i] - lo) / ((hi - lo) or 1)
+
+    def covered(spot):
+        x0, y0 = spot[0] * (1 - box_w), spot[1] * (1 - box_h)
+        x, y = points[:, 0], points[:, 1]
+        return np.sum((x >= x0) & (x <= x0 + box_w) & (y >= y0) & (y <= y0 + box_h))
+
+    return min(_PLOTLY_LEGEND_SPOTS, key=covered)
+
+
+class _PlotlyFigure:
+    """
+    plotly counterpart of a matplotlib Figure for :class:`_PlotlyAxes` panels.
+
+    :meth:`to_plotly` copies the panels into subplots of the plotly Figure `fig`, or a new one.
+    """
+
+    def __init__(self, fig=None, figsize: tuple = (6.4, 4.8)):
+        self.fig, self.figsize, self.axes, self.title = fig, figsize, [], None
+
+    def add_subplot(self, rows: int, cols: int, index: int) -> _PlotlyAxes:
+        self.axes.append(_PlotlyAxes((rows, cols, index)))
+        return self.axes[-1]
+
+    def suptitle(self, title: str):
+        self.title = title
+
+    def tight_layout(self):
+        pass
+
+    def to_plotly(self):
+        """Copy the traces and axes of the panels into subplots, spanning cells as with matplotlib."""
+        from math import lcm
+
+        _import_plotly()
+        from plotly.subplots import make_subplots
+
+        rows, cols = lcm(*(ax.pos[0] for ax in self.axes)), lcm(*(ax.pos[1] for ax in self.axes))
+        specs, cells = [[None] * cols for _ in range(rows)], {}
+        for ax in self.axes:
+            r, c, i = ax.pos
+            row, col = (i - 1) // c * (rows // r), (i - 1) % c * (cols // c)
+            specs[row][col], cells[row, col] = dict(rowspan=rows // r, colspan=cols // c), ax
+        grid = dict(rows=rows, cols=cols, specs=specs,
+                    subplot_titles=[cells[cell].title or '' for cell in sorted(cells)])
+        fig = self.fig
+        if fig is None:
+            fig = make_subplots(**grid).update_layout(_PLOTLY_LAYOUT, width=100 * self.figsize[0],
+                                                      height=100 * self.figsize[1])
+        else:
+            try:
+                fig.set_subplots(**grid)
+            except ValueError:  # a figure from an earlier call already has the subplots: draw over it
+                pass
+        for k, ((row, col), ax) in enumerate(sorted(cells.items())):
+            # a legend in the plot area of each panel that has one, like matplotlib
+            legend = f"legend{k + 1 if k else ''}"
+            for trace in ax.fig.data:
+                trace.update(legend=legend, showlegend=bool(trace.showlegend) and ax.has_legend)
+            fig.add_traces(ax.fig.data, rows=row + 1, cols=col + 1)
+            fig.update_xaxes(ax.fig.layout.xaxis, row=row + 1, col=col + 1)
+            fig.update_yaxes(ax.fig.layout.yaxis, row=row + 1, col=col + 1)
+            if ax.has_legend:
+                subplot, margin = fig.get_subplot(row + 1, col + 1), fig.layout.margin
+                (x0, x1), (y0, y1) = subplot.xaxis.domain, subplot.yaxis.domain
+                # plot area in pixels, with plotly's default size and margins where unset
+                width = (x1 - x0) * ((fig.layout.width or 700) - (margin.l or 80) - (margin.r or 80))
+                height = (y1 - y0) * ((fig.layout.height or 450) - (margin.t or 100) - (margin.b or 80))
+                x, y = _plotly_legend_position(ax.fig, width, height)
+                fig.update_layout({legend: dict(
+                    x=x0 + x * (x1 - x0), y=y0 + y * (y1 - y0), xanchor={0: 'left', 1: 'right'}[x],
+                    yanchor={0: 'bottom', 1: 'top'}.get(y, 'middle'), font_size=_PLOTLY_LEGEND_FONT,
+                    bgcolor='rgba(255,255,255,0.8)', bordercolor='lightgrey', borderwidth=1)})
+        if self.title is not None:
+            fig.update_layout(title_text=self.title)
+        return fig
+
+
+def _figure(backend: str, fig=None, **kwargs):
+    """
+    :func:`figure` for `backend`, or with plotly a :class:`_PlotlyFigure` drawing into the plotly Figure `fig`.
+    """
+    if backend == 'plotly':
+        return _PlotlyFigure(fig, kwargs.get('figsize', (6.4, 4.8)))
+    return figure(**kwargs)
+
+
+def _subplots(rows: int, cols: int, backend: str, fig=None, **kwargs):
+    """:func:`subplots` for `backend`, see :func:`_figure`; the axes are squeezed like matplotlib's."""
+    if backend == 'plotly':
+        fig = _figure(backend, fig, **kwargs)
+        axes = np.array([[fig.add_subplot(rows, cols, r * cols + c + 1) for c in range(cols)] for r in range(rows)])
+        return fig, axes[0, 0] if axes.size == 1 else axes.squeeze()
+    return subplots(rows, cols, **kwargs)
+
+
+def _frequency_x(ax, frequency: Frequency) -> np.ndarray:
+    """x values of `frequency` on `ax`: in Hz with matplotlib, whose ticks are scaled, else in the unit of `ax`."""
+    return _plotly_frequency_x(_plotly_figure(ax), frequency)[0] if _is_plotly_figure(ax) else frequency.f
 
 
 _PLOTLY_SMITH_COLORS = dict(superlight='whitesmoke', verylight='lightgrey', light='grey', heavy='black')

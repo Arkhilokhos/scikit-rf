@@ -80,7 +80,7 @@ plot = [
 ]
 
 plotly = [
-    "plotly >=5.0"
+    "plotly >=5.15"
 ]
 
 xlsx = [

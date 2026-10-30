@@ -671,3 +671,90 @@ def test_plotly_calibration_set_uncertainty(one_port_cal, mpl_axes):
     assert cal_set.plot_uncertainty_per_standard(ax=fig, backend="plotly") is fig
     with pytest.raises(TypeError, match="cannot be used with backend='plotly'"):
         cal_set.plot_uncertainty_per_standard(ax=mpl_axes, backend="plotly")
+
+@pytest.fixture(scope="module")
+def deembedding():
+    """Single-ended and mixed-mode IEEE P370 de-embeddings of the test 2x-thru and FIX-DUT-FIX."""
+    from skrf.calibration import deembedding as de
+
+    test_dir = rf.calibration.__path__[0] + "/tests/deembed/"
+    s2x, fdf = rf.Network(test_dir + "s2xthru.s2p"), rf.Network(test_dir + "fdf.s2p")
+    se2x, sefdf = (rf.network.concat_ports([n, n], port_order="second") for n in (s2x, fdf))
+    se_nzc, se_zc = de.IEEEP370_SE_NZC_2xThru(s2x, name="nzc"), de.IEEEP370_SE_ZC_2xThru(s2x, fdf, name="zc")
+    mm_nzc = de.IEEEP370_MM_NZC_2xThru(se2x, name="mm nzc")
+    mm_zc = de.IEEEP370_MM_ZC_2xThru(dummy_2xthru=se2x, dummy_fix_dut_fix=sefdf, name="mm zc")
+    fer = de.IEEEP370_FER()
+    return {
+        "se_nzc_residuals": lambda **k: se_nzc.plot_check_residuals(**k),
+        "se_nzc_impedance": lambda **k: se_nzc.plot_check_impedance(fdf, **k),
+        "se_zc_residuals": lambda **k: se_zc.plot_check_residuals(**k),
+        "se_zc_impedance": lambda **k: se_zc.plot_check_impedance(**k),
+        "mm_nzc_residuals": lambda **k: mm_nzc.plot_check_residuals(**k),
+        "mm_zc_impedance": lambda **k: mm_zc.plot_check_impedance(**k),
+        "fd_se_fer": lambda **k: fer.plot_fd_se_fer(s2x, **k),
+        "fd_mm_fer": lambda **k: fer.plot_fd_mm_fer(se2x, **k),
+        "td_se_fer": lambda **k: fer.plot_td_se_fer(s2x, fdf, **k),
+        "td_mm_fer": lambda **k: fer.plot_td_mm_fer(se2x, sefdf, **k),
+    }
+
+@needs_plotly
+@pytest.mark.filterwarnings("ignore:divide by zero:RuntimeWarning")  # no mode conversion in the mixed-mode data
+@pytest.mark.parametrize("plot", ["se_nzc_residuals", "se_nzc_impedance", "se_zc_residuals", "se_zc_impedance",
+                                  "mm_nzc_residuals", "mm_zc_impedance", "fd_se_fer", "fd_mm_fer", "td_se_fer",
+                                  "td_mm_fer"])
+def test_plotly_deembedding(deembedding, plot: str):
+    out = deembedding[plot]()
+    mpl_fig = out[0] if isinstance(out, tuple) else out
+    fig = deembedding[plot](backend="plotly")
+    # each panel has the traces of its matplotlib Axes, with the same title and y data
+    assert [a.text for a in fig.layout.annotations] == [ax.get_title() for ax in mpl_fig.axes]
+    assert fig.layout.title.text == mpl_fig.get_suptitle()
+    for i, ax in enumerate(mpl_fig.axes):
+        traces = [t for t in fig.data if t.xaxis == f"x{i + 1 if i else ''}"]
+        assert len(traces) == len(ax.lines)
+        for trace, line in zip(traces, ax.lines):
+            np.testing.assert_allclose(np.asarray(trace.y, dtype=float), line.get_ydata())
+            if not line.get_label().startswith("_"):
+                assert trace.name == line.get_label()
+        layout = fig.layout[f"yaxis{i + 1 if i else ''}"]
+        assert layout.title.text == (ax.get_ylabel() or None)
+        # a legend of its own in the plot area of each panel, as matplotlib
+        legend = f"legend{i + 1 if i else ''}"
+        assert {t.legend for t in traces} == {legend}
+        assert any(t.showlegend for t in traces) == (ax.get_legend() is not None)
+        if ax.get_legend() is not None:
+            x0, x1 = fig.layout[f"xaxis{i + 1 if i else ''}"].domain
+            y0, y1 = layout.domain
+            assert x0 <= fig.layout[legend].x <= x1 and y0 <= fig.layout[legend].y <= y1
+    mpl.pyplot.close("all")
+    # a figure from an earlier call can be drawn over, as matplotlib's axes or figure
+    n_traces = len(fig.data)
+    key = "fig" if "fer" in plot else "ax"
+    assert deembedding[plot](**{key: fig}, backend="plotly") is fig
+    assert len(fig.data) == 2 * n_traces
+    with pytest.raises(TypeError, match="cannot be used with backend='matplotlib'"):
+        deembedding[plot](**{key: fig})
+
+@needs_plotly
+def test_plotly_fer_limits(deembedding):
+    from skrf.calibration.deembedding import IEEEP370_FER
+
+    freq = rf.Frequency(1, 10, 11, "GHz")
+    fig = go.Figure()
+    IEEEP370_FER().plot_limit_fer2(freq, fig, backend="plotly")
+    assert [t.name for t in fig.data] == ["Maximum A", "Maximum B", "Maximum C"]
+    np.testing.assert_allclose(fig.data[0].x, [1, 10])  # in the unit of the figure
+    IEEEP370_FER().plot_limit_fer5(np.arange(3), np.ones(3), fig, backend="plotly")
+    assert [t.showlegend for t in fig.data[3:5]] == [True, False]  # one legend entry for the +/- lines
+
+@needs_plotly
+def test_plotly_legend_position():
+    # the legend goes where it covers the least data, like matplotlib's 'best'
+    fig = go.Figure(go.Scatter(x=[0, 1], y=[1, 1], name="a", showlegend=True))
+    fig.add_scatter(x=[0, 1], y=[0, 1], showlegend=False)
+    assert rf.plotting._plotly_legend_position(fig, 300, 300) == (1, 0)  # the diagonal passes the other corners
+    fig = go.Figure(go.Scatter(x=[0, 1], y=[0.1, 0.1], name="a", showlegend=True))
+    fig.update_yaxes(range=[0.05, 1])  # the line at the bottom of the plot area
+    assert rf.plotting._plotly_legend_position(fig, 300, 300) == (1, 1)
+    fig.update_yaxes(range=[-1, 0.12])  # the line at the top
+    assert rf.plotting._plotly_legend_position(fig, 300, 300) == (1, 0)
