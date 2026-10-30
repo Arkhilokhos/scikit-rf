@@ -227,7 +227,7 @@ def test_plotly_does_not_import_matplotlib():
         "ns.plot_violin('s_db'); ns.plot_uncertainty_decomposition(); s = n.s[:, 0, 0]; "
         "rf.plotting.plot_rectangular(n.f, n.s_db[:, 0, 0]); rf.plotting.plot_complex_rectangular(s); "
         "rf.plotting.plot_complex_polar(s); rf.plotting.plot_smith(s); rf.plotting.subplot_params(n); "
-        "rf.media.Freespace(n.frequency).plot_ep_mu()")
+        "rf.media.Freespace(n.frequency).plot_ep_mu(); ns.signature(); ns.animate('s_db')")
     assert "plotly" in loaded
     assert "matplotlib" not in loaded
 
@@ -510,3 +510,51 @@ def test_plotly_freespace(ntwk1: rf.Network, method: str, mpl_axes):
     assert_plotly_parity(fig, mpl_axes, x_scale=1e9)
     rf.plotting.options.backend = "plotly"
     assert isinstance(getattr(media, method)(), go.Figure)
+
+@needs_plotly
+def test_plotly_signature(ntwk_set_zip: NetworkSet, mpl_axes):
+    img = rf.plotting.signature(ntwk_set_zip, component="s_db", cbar_label="dB")
+    assert ntwk_set_zip.signature() is None
+    fig = ntwk_set_zip.signature(component="s_db", vmax=0, cbar_label="dB", backend="plotly")
+    (heatmap,) = fig.data
+    np.testing.assert_allclose(np.asarray(heatmap.z), img.get_array())
+    np.testing.assert_allclose(heatmap.x, ntwk_set_zip[0].frequency.f_scaled)
+    assert heatmap.zmax == 0 and heatmap.colorbar.title.text == "dB"
+    assert fig.layout.yaxis.autorange == "reversed" and fig.layout.yaxis.title.text == "Network #"
+    with pytest.raises(TypeError, match="imshow"):
+        ntwk_set_zip.signature(0, 0, "s_mag", None, False, None, "viridis", backend="plotly")
+    rf.plotting.options.backend = "plotly"
+    assert isinstance(ntwk_set_zip.signature(), go.Figure)
+
+@needs_plotly
+def test_plotly_signature_vs_time(ntwk_set_zip: NetworkSet):
+    for k, ntwk in enumerate(ntwk_set_zip):
+        ntwk.name = f"2024.01.02.03.04.{k:02d}.000000"
+    fig = ntwk_set_zip.signature(vs_time=True, backend="plotly")
+    assert [y.second for y in fig.data[0].y] == list(range(len(ntwk_set_zip)))
+    assert fig.layout.yaxis.title.text == "Time"
+
+@needs_plotly
+def test_plotly_animate(ntwk_set_zip: NetworkSet, monkeypatch):
+    mhz = ntwk_set_zip.copy()
+    mhz[1].frequency.unit = "MHz"
+    fig = mhz.animate("s_db", ylims=(-40, 0), xlims=(1e9, 1.5e9), backend="plotly")
+    assert len(fig.frames) == len(mhz) and fig.layout.yaxis.range == (-40, 0)
+    assert fig.layout.xaxis.range == (1, 1.5)  # xlims in Hz, like matplotlib
+    # each frame shows its Network in the unit of the first one
+    for frame, ntwk in zip(fig.frames, mhz):
+        np.testing.assert_allclose(frame.data[0].y, ntwk.s_db[:, 0, 0])
+        np.testing.assert_allclose(frame.data[0].x, ntwk.f / 1e9)
+    assert [step.label for step in fig.layout.sliders[0].steps] == [ntwk.name for ntwk in mhz]
+    assert [b.label for b in fig.layout.updatemenus[0].buttons] == ["Play", "Pause"]
+    assert len(mhz.animate("s_time_db", ylims=None, backend="plotly").frames) == len(mhz)
+    saved = []
+    monkeypatch.setattr(go.Figure, "write_image", lambda fig, path: saved.append(path))
+    mhz.animate("s_db", savefigs=True, dir_="out", backend="plotly")
+    assert len(saved) == len(mhz) and saved[0].endswith("out_00000.png")
+    rf.plotting.options.backend = "plotly"
+    assert isinstance(mhz.animate("s_db"), go.Figure)
+
+def test_animate_matplotlib(ntwk_set_zip: NetworkSet, mpl_axes):
+    assert ntwk_set_zip.animate("s_db", show=False) is None
+    assert len(mpl_axes.figure.axes[0].lines) == 4  # the last Network

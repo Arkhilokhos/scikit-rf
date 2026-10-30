@@ -1439,7 +1439,7 @@ class NetworkSet:
 
     @copy_doc(skrf_plt.animate)
     def animate(self, *args, **kwargs):
-        skrf_plt.animate(self, *args, **kwargs)
+        return skrf_plt.animate(self, *args, **kwargs)
 
     @copy_doc(skrf_plt.plot_uncertainty_bounds_component)
     def plot_uncertainty_bounds_component(self, *args, **kwargs):
@@ -1479,9 +1479,8 @@ class NetworkSet:
 
     @copy_doc(skrf_plt.signature)
     def signature(self, *args, **kwargs):
-        skrf_plt._matplotlib_only("NetworkSet.signature", kwargs)
-        del kwargs["backend"]  # the remaining kwargs go to imshow
-        skrf_plt.signature(self, *args, **kwargs)
+        out = skrf_plt.signature(self, *args, **kwargs)
+        return out if skrf_plt._is_plotly_figure(out) else None
 
     @copy_doc(skrf_plt.plot_violin)
     def plot_violin(self, attribute, *args, **kwargs):

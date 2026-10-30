@@ -42,8 +42,8 @@ take a per-call ``backend=`` argument.
 
 With plotly they return a ``plotly.graph_objects.Figure``; pass it as ``ax``
 to add traces to it. Passing a matplotlib Axes as ``ax`` selects matplotlib.
-Of the convenience functions below, only `subplot_params` supports plotly;
-the others, `Calibration.plot_caled_ntwks` and the VectorFitting plots
+Of the convenience functions below, only `subplot_params` and `signature`
+support plotly; the others, `Calibration.plot_caled_ntwks` and the VectorFitting plots
 always use matplotlib.
 
 Convenience plotting functions
@@ -158,13 +158,6 @@ def _import_plotly():
     except ImportError as err:
         raise ImportError("The plotly backend requires plotly: pip install scikit-rf[plotly]") from err
     return go
-
-
-def _matplotlib_only(method_name: str, kwargs: dict):
-    """Keep a matplotlib-only helper, and the plot methods it forwards `kwargs` to, on matplotlib."""
-    if _validate_backend(kwargs.get('backend', 'matplotlib')) != 'matplotlib':
-        raise NotImplementedError(f"{method_name} only supports the matplotlib plotting backend")
-    kwargs['backend'] = 'matplotlib'
 
 
 def _get_axes(ax: Axes | None = None) -> Axes:
@@ -1760,9 +1753,16 @@ def animate(self: NetworkSet, attr: str = 's_deg', ylims: tuple = (-5, 5),
         show each frame as its animated. Default is True.
     savefigs : bool, optional
         save each frame as a png. Default is False.
+        With plotly, this needs the kaleido package.
 
     \*args, \*\*kwargs :
-        passed to the Network plotting function
+        passed to the Network plotting function, including ``backend``
+        (default ``skrf.plotting.options.backend``)
+
+    Returns
+    -------
+    None, or with the plotly backend a plotly Figure with one frame per
+    Network, a slider and play/pause buttons. `show` is not used then.
 
     Note
     ----
@@ -1782,7 +1782,41 @@ def animate(self: NetworkSet, attr: str = 's_deg', ylims: tuple = (-5, 5),
     >>> ns.animate('s_deg', ylims=(-5,5), label=None)
 
     """
-    _matplotlib_only("NetworkSet.animate", kwargs)
+    kwargs['backend'] = _resolve_backend(kwargs.get('backend'))
+    if kwargs['backend'] == 'plotly':
+        go = _import_plotly()
+        unit = self[0].frequency.unit
+        frames = []
+        for idx, k in enumerate(self):
+            ntwk = k.windowed() if 'time' in attr else k
+            # every frame in the frequency unit of the first Network
+            fig = ntwk.__getattribute__('plot_' + attr)(*args, ax=_plotly_figure(meta={'skrf_frequency_unit': unit}),
+                                                        **kwargs)
+            if ylims is not None:
+                fig.update_yaxes(range=ylims)
+            if xlims is not None:  # in Hz for frequency, like the matplotlib x data
+                scale = 1 if 'time' in attr else ntwk.frequency.multiplier_dict[unit.lower()]
+                fig.update_xaxes(range=[x / scale for x in xlims])
+            if savefigs:
+                fig.write_image(os.path.join(dir_, 'out_%.5i' % idx + '.png'))
+            if idx == 0:
+                first = fig
+            frames.append(go.Frame(data=fig.data, name=str(idx)))
+        first.frames = frames
+        steps = [dict(method='animate', label=k.name or str(idx),
+                      args=[[str(idx)], dict(mode='immediate', frame=dict(duration=0, redraw=True))])
+                 for idx, k in enumerate(self)]
+        buttons = [dict(label='Play', method='animate',
+                        args=[None, dict(fromcurrent=True, frame=dict(duration=500, redraw=True))]),
+                   dict(label='Pause', method='animate',
+                        args=[[None], dict(mode='immediate', frame=dict(duration=0, redraw=False))])]
+        return first.update_layout(
+            # the slider under the x-axis title, and the buttons under the slider
+            height=650, margin_b=200,
+            sliders=[dict(steps=steps, x=0, len=1, y=0, yanchor='top', pad=dict(t=60))],
+            updatemenus=[dict(type='buttons', direction='left', buttons=buttons, x=0, y=0,
+                              xanchor='left', yanchor='top', pad=dict(t=150))])
+
     import matplotlib.pyplot as plt
 
     was_interactive = plt.isinteractive()
@@ -2291,7 +2325,7 @@ def plot_logsigma(self: NetworkSet, label_axis: bool = True, *args, backend: str
 def signature(self: NetworkSet, m: int = 0, n: int = 0, component: str = 's_mag',
               vmax: Number | None = None, vs_time: bool = False,
               cbar_label: str | None = None,
-              *args, **kwargs):
+              *args, backend: str | None = None, **kwargs):
     r"""
     Visualization of a NetworkSet.
 
@@ -2317,14 +2351,33 @@ def signature(self: NetworkSet, m: int = 0, n: int = 0, component: str = 's_mag'
         Default is False.
     cbar_label: String or None, optional
         label for the colorbar. Default is None
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.plotting.options.backend``.
     \*args,\*\*kw : arguments, keyword arguments
-        passed to :func:`~pylab.imshow`
-    """
-    import matplotlib.pyplot as plt
-    from matplotlib.dates import date2num
+        passed to :func:`~pylab.imshow`, or with plotly keyword arguments
+        to :class:`plotly.graph_objects.Heatmap`
 
+    Returns
+    -------
+    The matplotlib image, or the plotly Figure with the plotly backend
+    """
     mat = np.array([self[k].__getattribute__(component)[:, m, n] \
                      for k in range(len(self))])
+
+    if _resolve_backend(backend) == 'plotly':
+        if args:
+            raise TypeError(f"Positional imshow arguments {args!r} are not supported by the plotly backend")
+        go = _import_plotly()
+        freq = self[0].frequency
+        y = [now_string_2_dt(k.name) for k in self] if vs_time else np.arange(len(self))
+        fig = _plotly_figure()
+        fig.add_trace(go.Heatmap(z=mat, x=freq.f_scaled, y=y, zmax=vmax, colorbar=dict(title=cbar_label), **kwargs))
+        # first Network at the top, like imshow
+        return fig.update_layout(xaxis_title=f'Frequency ({freq.unit})', yaxis_title='Time' if vs_time else 'Network #',
+                                 yaxis_autorange='reversed')
+
+    import matplotlib.pyplot as plt
+    from matplotlib.dates import date2num
 
     # if vmax is None:
     #    vmax = 3*mat.mean()
