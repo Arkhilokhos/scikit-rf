@@ -921,3 +921,35 @@ def test_label_x_axis(ntwk1: rf.Network, mpl_axes):
     rf.plotting.options.backend = "plotly"
     ntwk1.frequency.plot(ntwk1.s_db[:, 0, 0], ax=other, backend="matplotlib")
     assert other.get_xlabel() == f"Frequency ({ntwk1.frequency.unit})"
+
+def test_save_all_figs(ntwk1: rf.Network, mpl_axes, tmp_path):
+    ntwk1.plot_s_db(ax=mpl_axes)
+    mpl_axes.set_title("open figure")
+    rf.plotting.save_all_figs(str(tmp_path), format=["png", "pdf"])
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["open_figure.pdf", "open_figure.png"]
+    fig = mpl.pyplot.figure()
+    fig.add_subplot().set_title("given")
+    rf.plotting.save_all_figs(str(tmp_path), figs=[fig])  # only the figures passed
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["given.png", "open_figure.pdf", "open_figure.png"]
+
+@needs_plotly
+def test_plotly_save_all_figs(ntwk1: rf.Network, mpl_axes, tmp_path, monkeypatch):
+    fig = ntwk1.plot_s_db(backend="plotly").update_layout(title_text="ring slot")
+    mpl_axes.set_title("matplotlib")
+    images = []
+    monkeypatch.setattr(go.Figure, "write_image", lambda self, path, format: images.append((path, format)))
+    # plotly and matplotlib figures in one call, a plotly figure as html by default
+    rf.plotting.save_all_figs(str(tmp_path), figs=[fig, mpl_axes.figure])
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["matplotlib.png", "ring_slot.html"]
+    rf.plotting.save_all_figs(str(tmp_path), format=["html", "png"], figs=[fig])
+    assert images == [(f"{tmp_path}/ring_slot.png", "png")]
+
+@needs_plotly
+def test_plotly_func_on_all_figs(ntwk1: rf.Network, mpl_axes):
+    fig = ntwk1.plot_s_db(backend="plotly")
+    ntwk1.plot_s_db(ax=mpl_axes)
+    # a plotly figure is passed to func, a matplotlib figure is made current
+    rf.plotting.func_on_all_figs(lambda f, **k: f.update_xaxes(**k), showgrid=False, figs=[fig])
+    assert fig.layout.xaxis.showgrid is False
+    rf.plotting.func_on_all_figs(mpl.pyplot.xlabel, "x", figs=[mpl_axes.figure])
+    assert mpl_axes.get_xlabel() == "x"

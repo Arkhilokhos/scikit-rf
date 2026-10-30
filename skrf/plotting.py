@@ -1442,7 +1442,7 @@ def shade_bands(edges: NumberLike, y_range: tuple | None = None,
 
 
 def save_all_figs(dir: str = './', format: None | list[str] = None,
-                  replace_spaces: bool = True, echo: bool| None = None):
+                  replace_spaces: bool = True, echo: bool| None = None, *, figs: list | None = None):
     """
     Save all open Figures to disk.
 
@@ -1454,33 +1454,45 @@ def save_all_figs(dir: str = './', format: None | list[str] = None,
         the types of formats to save figures as. The elements of this
         list are passed to :func:`matplotlib.pyplot.savefig`. This is a list so that
         you can save each figure in multiple formats. Default is None.
+        A plotly figure is saved as 'html' by default; other formats, such as
+        'png' or 'pdf', need the kaleido package.
     replace_spaces : bool, optional
         default is True.
     echo : bool, optional.
         True prints filenames as they are saved. Default is True.
+    figs : list of matplotlib or plotly Figures, optional
+        the figures to save, by default all open matplotlib figures.
+        plotly keeps no list of open figures, so plotly figures are saved by passing them here.
     """
-    import matplotlib.pyplot as plt
-
     if echo is not None:
         warnings.warn("`echo` parameter is deprecated and will be removed in future versions. "
                       "Use logging instead.", FutureWarning, stacklevel=2)
 
+    if figs is None:
+        import matplotlib.pyplot as plt
+
+        figs = [plt.figure(fignum) for fignum in plt.get_fignums()]
     if dir[-1] != '/':
         dir = dir + '/'
-    for fignum in plt.get_fignums():
-        fileName = plt.figure(fignum).get_axes()[0].get_title()
+    for fig in figs:
+        plotly = _is_plotly_figure(fig)
+        fileName = (fig.layout.title.text or '') if plotly else fig.get_axes()[0].get_title()
         if replace_spaces:
             fileName = fileName.replace(' ','_')
         if fileName == '':
             fileName = 'unnamedPlot'
-        if format is None:
-            plt.savefig(dir+fileName)
-            logger.debug(f"Saved figure {dir+fileName}")
-        else:
-            for fmt in format:
-                path = dir+fileName+'.'+fmt
-                plt.savefig(path, format=fmt)
-                logger.debug(f"Saved figure {path}")
+        for fmt in format if format is not None else [None]:
+            if plotly:
+                fmt = fmt or 'html'
+                path = f"{dir}{fileName}.{fmt}"
+                if fmt == 'html':
+                    fig.write_html(path)
+                else:
+                    fig.write_image(path, format=fmt)
+            else:
+                path = dir + fileName + ('' if fmt is None else '.' + fmt)
+                fig.savefig(path, format=fmt)
+            logger.debug(f"Saved figure {path}")
 
 saf = save_all_figs
 
@@ -1606,7 +1618,7 @@ def scrape_legend(n: int | None = None,
     ax.legend([handles[k] for k in k_list], [labels[k] for k in k_list])
 
 
-def func_on_all_figs(func: Callable, *args, **kwargs):
+def func_on_all_figs(func: Callable, *args, figs: list | None = None, **kwargs):
     r"""
     Run a function after making all open figures current.
 
@@ -1617,16 +1629,27 @@ def func_on_all_figs(func: Callable, *args, **kwargs):
     ----------
     func : function
         function to call
+    figs : list of matplotlib or plotly Figures, optional
+        the figures to run `func` on, by default all open matplotlib figures.
+        plotly has no current figure, so for a plotly figure `func` is called
+        with the figure as its first argument.
     \*args, \*\*kwargs : passed to func
 
     Examples
     --------
     >>> rf.func_on_all_figs(grid, alpha=.3)
+    >>> rf.func_on_all_figs(lambda fig: fig.update_xaxes(showgrid=False), figs=[fig])
     """
-    import matplotlib.pyplot as plt
+    if figs is None:
+        import matplotlib.pyplot as plt
 
-    for fig_n in plt.get_fignums():
-        fig = plt.figure(fig_n)
+        figs = [plt.figure(fig_n) for fig_n in plt.get_fignums()]
+    for fig in figs:
+        if _is_plotly_figure(fig):
+            func(fig, *args, **kwargs)
+            continue
+        import matplotlib.pyplot as plt
+
         for ax_n in fig.axes:
             fig.add_axes(ax_n) # trick to make axes current
             func(*args, **kwargs)
