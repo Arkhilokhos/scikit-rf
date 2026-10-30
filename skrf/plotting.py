@@ -585,9 +585,9 @@ def plot_rectangular(x: NumberLike, y: NumberLike,
 # plotly counterparts of the matplotlib plotting functions above. They only draw
 # data that scikit-rf has already computed, and import plotly when called.
 
-# fixed size of a new figure, as a notebook otherwise stretches a plotly figure across the whole cell,
-# with less room above the plot than plotly's default
-_PLOTLY_SIZE = dict(width=700, height=500, margin_t=60)
+# layout of a new figure: a fixed size, as a notebook otherwise stretches a plotly figure across the whole cell,
+# with less room above the plot than plotly's default, and the title centered over the plot like matplotlib
+_PLOTLY_LAYOUT = dict(width=700, height=500, margin_t=60, title=dict(x=0.5, xanchor='center', xref='paper'))
 # common matplotlib line keywords and their plotly equivalents
 _PLOTLY_ALIASES = {'c': 'color', 'ls': 'linestyle', 'lw': 'linewidth', 'ms': 'markersize'}
 _PLOTLY_COLORS = {'b': 'blue', 'g': 'green', 'r': 'red', 'c': 'cyan', 'm': 'magenta', 'y': 'yellow',
@@ -602,7 +602,7 @@ def _plotly_figure(ax=None, **layout):
     """Return the plotly Figure `ax`, or a new Figure of the default size and `layout` if it is None."""
     go = _import_plotly()
     if ax is None:
-        return go.Figure(layout={**_PLOTLY_SIZE, **layout})
+        return go.Figure(layout={**_PLOTLY_LAYOUT, **layout})
     if not isinstance(ax, go.Figure):
         raise TypeError(f"the plotly backend needs a plotly Figure as ax, not {type(ax).__name__}")
     return ax
@@ -710,7 +710,7 @@ def _plotly_subplots(figs: list, cols: int, **kwargs):
     _import_plotly()
     from plotly.subplots import make_subplots
 
-    fig = make_subplots(rows=-(-len(figs) // cols), cols=cols, **kwargs).update_layout(_PLOTLY_SIZE)
+    fig = make_subplots(rows=-(-len(figs) // cols), cols=cols, **kwargs).update_layout(_PLOTLY_LAYOUT)
     shown = set()
     for i, sub in enumerate(figs):
         row, col, xaxis = i // cols + 1, i % cols + 1, f"x{i + 1 if i else ''}"

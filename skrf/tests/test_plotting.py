@@ -619,3 +619,11 @@ def test_plotly_vector_fitting_plots(vector_fit, mpl_axes):
     assert isinstance(vector_fit.plot_s_db(), go.Figure)
     with pytest.raises(TypeError, match="cannot be used with backend='plotly'"):
         vector_fit.plot_s_db(ax=mpl_axes)
+
+@needs_plotly
+def test_plotly_title_centered(ntwk1: rf.Network):
+    # centered over the plot area like matplotlib, on single plots, smith charts and subplots
+    for fig in (rf.plotting.plot_rectangular(ntwk1.f, ntwk1.s_db[:, 0, 0], title="t", backend="plotly"),
+                rf.plotting.plot_smith(ntwk1.s[:, 0, 0], title="t", backend="plotly"),
+                rf.plotting.subplot_params(ntwk1, backend="plotly")):
+        assert (fig.layout.title.x, fig.layout.title.xanchor, fig.layout.title.xref) == (0.5, "center", "paper")
