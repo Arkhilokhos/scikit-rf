@@ -66,6 +66,7 @@ Convenience plotting functions
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable
 from contextlib import suppress
 from functools import partial, wraps
@@ -234,22 +235,52 @@ def _get_label_str(netw: Network, param: str, m: int, n: int, usetex: bool | Non
     return label_string
 
 
-def scale_frequency_ticks(ax: Axes, funit: str):
+def scale_frequency_ticks(ax: Axes, funit: str, *, backend: str | None = None):
     """
     Scale frequency axis ticks.
 
     Parameters
     ----------
     ax : plt.Axes
-        Matplotlib figure axe
+        Matplotlib figure axe, or with plotly the plotly Figure
     funit : str
         frequency unit string as in :data:`~skrf.frequency.Frequency.unit`
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.plotting.options.backend``.
+        plotly has no tick formatter, so the frequencies of the figure, which
+        scikit-rf draws in its frequency unit, are converted to `funit`.
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
     Raises
     ------
     ValueError
-        if invalid unit is passed
+        if invalid unit is passed, or with plotly if the figure has no frequency axis drawn by scikit-rf
     """
+    if _resolve_backend(backend, ax) == 'plotly':
+        from .constants import FREQ_UNITS
+
+        units = {unit.lower(): unit for unit in FREQ_UNITS}
+        if funit.lower() not in units:
+            raise ValueError(f"invalid funit {funit}")
+        ax = _plotly_figure(ax)
+        meta = ax.layout.meta if isinstance(ax.layout.meta, dict) else {}
+        if 'skrf_frequency_unit' not in meta:
+            raise ValueError("the figure has no frequency axis drawn by scikit-rf")
+        unit = units[funit.lower()]
+        scale = FREQ_UNITS[units[meta['skrf_frequency_unit'].lower()]] / FREQ_UNITS[unit]
+        for trace in ax.data:
+            if getattr(trace, 'x', None) is not None:
+                trace.x = np.asarray(trace.x) * scale
+        for shape in ax.layout.shapes:  # such as the bands of shade_bands
+            if shape.xref == 'x':
+                shape.update(x0=shape.x0 * scale, x1=shape.x1 * scale)
+        if ax.layout.xaxis.range is not None:
+            ax.update_xaxes(range=[x * scale for x in ax.layout.xaxis.range])
+        return ax.update_layout(meta={**meta, 'skrf_frequency_unit': unit}, xaxis_title_text=f'Frequency ({unit})')
+
     from matplotlib import ticker
 
     if funit.lower() == "hz":
@@ -1641,14 +1672,29 @@ def plot_vector(a: complex, off: complex = 0+0j, *, ax: Axes | None = None,
            angles='xy', scale=1, **kwargs)
 
 
-def colors() -> list[str]:
+def colors(*, backend: str | None = None) -> list[str]:
     """
     Return the list of colors of the rcParams color cycle.
+
+    With plotly, the colors of plotly's default template, see :func:`stylely`.
+
+    Parameters
+    ----------
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.plotting.options.backend``.
 
     Returns
     -------
     colors : List[str]
     """
+    if _resolve_backend(backend) == 'plotly':
+        _import_plotly()
+        import plotly.io as pio
+        from plotly.colors import qualitative
+
+        template = pio.templates[pio.templates.default] if pio.templates.default else None
+        return list(template.layout.colorway or qualitative.Plotly) if template else list(qualitative.Plotly)
+
     import matplotlib.pyplot as plt
 
     return [c['color'] for c in plt.rcParams['axes.prop_cycle']]
@@ -2008,30 +2054,99 @@ def plot_it_all(netw: Network, *args, **kwargs):
     netw.plot_s_complex(*args, **kwargs)
 
 
+# matplotlib style settings and the plotly template settings they become, see _plotly_template
+_PLOTLY_STYLE_LAYOUT = {'axes.facecolor': 'plot_bgcolor', 'figure.facecolor': 'paper_bgcolor',
+                        'font.size': 'font_size', 'axes.titlesize': 'title_font_size',
+                        'legend.fontsize': 'legend_font_size'}
+_PLOTLY_STYLE_AXES = {'axes.grid': 'showgrid', 'grid.color': 'gridcolor', 'axes.labelcolor': 'title_font_color',
+                      'axes.labelsize': 'title_font_size', '{}tick.color': 'tickfont_color',
+                      '{}tick.labelsize': 'tickfont_size'}
+# matplotlib's relative font sizes
+_PLOTLY_FONT_SCALES = {'xx-small': .579, 'x-small': .694, 'small': .833, 'medium': 1., 'large': 1.2,
+                       'x-large': 1.44, 'xx-large': 1.728}
+
+
+def _plotly_style_color(value: str) -> str:
+    """plotly color for a color of a matplotlib style file, where hex colors are written without '#'."""
+    value = value.strip()
+    return '#' + value if re.fullmatch('[0-9A-Fa-f]{6}', value) else _plotly_color(value)
+
+
+def _plotly_template(rc: dict):
+    """
+    plotly template with the settings of the matplotlib style `rc` that plotly has, on top of plotly's default.
+
+    `rc` maps the settings to their values as written in a style file.
+    """
+    go = _import_plotly()
+    import plotly.io as pio
+
+    font_size = float(rc.get('font.size', 10))
+
+    def value(key: str, setting: str):
+        v = rc[key].strip()
+        if setting.endswith('color'):
+            return _plotly_style_color(v)
+        if setting == 'showgrid':
+            return v.lower() == 'true'
+        return font_size * _PLOTLY_FONT_SCALES[v] if v in _PLOTLY_FONT_SCALES else float(v)
+
+    layout = {setting: value(key, setting) for key, setting in _PLOTLY_STYLE_LAYOUT.items() if key in rc}
+    for axis in 'xy':
+        for key, setting in _PLOTLY_STYLE_AXES.items():
+            if key.format(axis) in rc:
+                layout[f'{axis}axis_{setting}'] = value(key.format(axis), setting)
+    if 'axes.prop_cycle' in rc:  # cycler('color', ['348ABD', ...])
+        layout['colorway'] = [_plotly_style_color(c) for c in re.findall("'([^']*)'", rc['axes.prop_cycle'])[1:]]
+    family = rc.get('font.family', '').strip()
+    if family in ('serif', 'sans-serif', 'monospace'):
+        layout['font_family'] = ', '.join(re.findall("'([^']*)'", rc.get(f'font.{family}', '')) + [family])
+    template = go.layout.Template(pio.templates['plotly'])
+    template.layout.update(layout)
+    if 'lines.linewidth' in rc:
+        template.data.scatter = [go.Scatter(line_width=float(rc['lines.linewidth']))]
+    return template
+
+
 def stylely(rc_dict: dict = None, style_file: str = 'skrf.mplstyle'):
     """
     Loads the rc-params from the specified file (file must be located in skrf/data).
 
+    The style applies to matplotlib and to plotly, whichever are installed. For plotly,
+    the settings that plotly has make a plotly template named after `style_file`, such
+    as 'skrf', which becomes plotly's default template.
+
     Parameters
     ----------
     rc_dict : dict, optional
-        rc dict passed to :func:`matplotlib.rc`, by default {}
+        rcParams such as ``{'font.size': 12}`` over those of `style_file`, by default {}
     style_file : str, optional
         style file, by default 'skrf.mplstyle'
     """
-    try:
+    from .data import pwd  # delayed to solve circular import
+
+    path, styled = os.path.join(pwd, style_file), False
+    with suppress(ImportError):
         import matplotlib.pyplot as plt
 
-        from .data import pwd  # delayed to solve circular import
+        plt.style.use(path)
+        plt.rcParams.update(rc_dict if rc_dict else {})
+        styled = True
+    with suppress(ImportError):
+        import plotly.io as pio
 
-        rc_dict = rc_dict if rc_dict else {}
-
-
-        plt.style.use(os.path.join(pwd, style_file))
-        plt.rc(rc_dict)
-    except ImportError as e:
-        warnings.warn(f"Could not import matplotlib: {e}", ImportWarning, stacklevel=2)
-
+        rc = {}
+        with open(path) as f:
+            for line in f:
+                key, sep, value = line.split('#', 1)[0].partition(':')
+                if sep and key.strip():
+                    rc[key.strip()] = value.strip()
+        name = os.path.splitext(style_file)[0]
+        pio.templates[name] = _plotly_template({**rc, **(rc_dict or {})})
+        pio.templates.default = name
+        styled = True
+    if not styled:
+        warnings.warn("Could not import matplotlib or plotly to style", ImportWarning, stacklevel=2)
 
 # Network Set Plotting Commands
 def animate(self: NetworkSet, attr: str = 's_deg', ylims: tuple = (-5, 5),
@@ -2295,7 +2410,7 @@ def plot_uncertainty_bounds_component(
                 raise(ValueError('incorrect plot type'))
 
             ax.set_ylabel(self[0].Y_LABEL_DICT.get(plot_attribute[2:], ''))  # use only the function of the attribute
-            scale_frequency_ticks(ax, ntwk_mean.frequency.unit)
+            scale_frequency_ticks(ax, ntwk_mean.frequency.unit, backend='matplotlib')
             ax.axis('tight')
 
     if plotly:
@@ -2418,7 +2533,7 @@ def plot_minmax_bounds_component(self: NetworkSet, attribute: PrimaryPropertiesT
         raise(ValueError('incorrect plot type'))
 
     ax.set_ylabel(self[0].Y_LABEL_DICT.get(attribute[2:], ''))  # use only the function of the attribute
-    scale_frequency_ticks(ax, ntwk_mean.frequency.unit)
+    scale_frequency_ticks(ax, ntwk_mean.frequency.unit, backend='matplotlib')
     ax.axis('tight')
 
 def plot_violin(self: NetworkSet, attribute: PrimaryPropertiesT, m: int = 0, n: int = 0,
@@ -2505,7 +2620,7 @@ def plot_violin(self: NetworkSet, attribute: PrimaryPropertiesT, m: int = 0, n: 
 
     ax.set_xlabel(f'Frequency ({self.ntwk_set[0].frequency.unit})')
     ax.set_ylabel(self[0].Y_LABEL_DICT.get(attribute[2:], ''))  # use only the function of the attribute
-    scale_frequency_ticks(ax, self.ntwk_set[0].frequency.unit)
+    scale_frequency_ticks(ax, self.ntwk_set[0].frequency.unit, backend='matplotlib')
     ax.axis('tight')
 
 def plot_uncertainty_bounds_s_db(self: NetworkSet, *args, **kwargs):
@@ -2722,7 +2837,7 @@ def signature(self: NetworkSet, m: int = 0, n: int = 0, component: str = 's_mag'
         plt.ylabel('Network #')
 
     plt.grid(0)
-    freq.labelXAxis()
+    freq.labelXAxis(backend='matplotlib')
 
     cbar = plt.colorbar()
     if cbar_label is not None:

@@ -240,7 +240,8 @@ def test_plotly_does_not_import_matplotlib():
         "rf.plotting.plot_rectangular(n.f, n.s_db[:, 0, 0]); rf.plotting.plot_complex_rectangular(s); "
         "rf.plotting.plot_complex_polar(s); rf.plotting.plot_smith(s); rf.plotting.subplot_params(n); "
         "rf.media.Freespace(n.frequency).plot_ep_mu(); ns.signature(); ns.animate('s_db'); "
-        "rf.plotting.shade_bands([1e9, 2e9], ax=n.plot_s_db()); rf.plotting.plot_vector(1j)")
+        "rf.plotting.shade_bands([1e9, 2e9], ax=n.plot_s_db()); rf.plotting.plot_vector(1j); "
+        "rf.plotting.colors(); rf.plotting.scale_frequency_ticks(n.plot_s_db(), 'MHz'); n.frequency.labelXAxis()")
     assert "plotly" in loaded
     assert "matplotlib" not in loaded
 
@@ -856,3 +857,67 @@ def test_plotly_legend_helpers(ntwk1: rf.Network):
     fig = ntwk1.plot_s_smith(0, 0, backend="plotly")
     rf.plotting.add_markers_to_lines(ax=fig, backend="plotly")
     assert [t.mode for t in fig.data if t.meta == "skrf_smith_chart"] == ["lines"] * len(_smith_grid_traces(fig))
+
+@needs_plotly
+@pytest.mark.parametrize("style_file", ["skrf.mplstyle", "skrf2.mplstyle", "ieeetrans.mplstyle"])
+def test_plotly_stylely(style_file: str, monkeypatch):
+    import plotly.io as pio
+
+    monkeypatch.setattr(pio.templates, "default", pio.templates.default)  # restored after the test
+    mpl.pyplot.style.use("default")
+    # one call styles both: matplotlib, and with the settings that plotly has, plotly's default template
+    rf.stylely(style_file=style_file)
+    rc = mpl.pyplot.rcParams
+    assert pio.templates.default == style_file.split(".")[0]
+    layout = pio.templates[pio.templates.default].layout
+    tick_size = mpl.font_manager.FontProperties(size=rc["xtick.labelsize"]).get_size()  # also for 'small' etc.
+    assert layout.font.size == rc["font.size"] and layout.xaxis.tickfont.size == pytest.approx(tick_size, rel=1e-3)
+    assert mpl.colors.to_hex(layout.plot_bgcolor) == mpl.colors.to_hex(rc["axes.facecolor"])
+    assert mpl.colors.to_hex(layout.xaxis.gridcolor) == mpl.colors.to_hex(rc["grid.color"])
+    if style_file != "ieeetrans.mplstyle":  # whose old axes.color_cycle setting matplotlib ignores
+        assert [mpl.colors.to_hex(c) for c in rf.plotting.colors(backend="plotly")] ==             [mpl.colors.to_hex(c) for c in rf.plotting.colors()]
+    assert pio.templates[pio.templates.default].data.scatter[0].line.width == rc["lines.linewidth"]
+    rf.stylely(style_file=style_file, rc_dict={"font.size": "14"})
+    assert pio.templates[pio.templates.default].layout.font.size == 14 == mpl.pyplot.rcParams["font.size"]
+    mpl.pyplot.style.use("default")
+
+@needs_plotly
+def test_plotly_colors(monkeypatch):
+    import plotly.io as pio
+    from plotly.colors import qualitative
+
+    monkeypatch.setattr(pio.templates, "default", "plotly")
+    assert rf.plotting.colors(backend="plotly") == list(pio.templates["plotly"].layout.colorway)
+    monkeypatch.setattr(pio.templates, "default", "none")
+    assert rf.plotting.colors(backend="plotly") == list(qualitative.Plotly)
+
+@needs_plotly
+def test_plotly_scale_frequency_ticks(ntwk1: rf.Network):
+    fig = ntwk1.plot_s_db(0, 0, backend="plotly")
+    rf.plotting.shade_bands(ntwk1.f[[0, 40]], ax=fig, backend="plotly")
+    fig.update_xaxes(range=[2, 4])
+    assert rf.plotting.scale_frequency_ticks(fig, "mhz", backend="plotly") is fig
+    # the frequencies, bands and range of the figure in MHz, also for traces added later
+    scale = ntwk1.frequency.multiplier / 1e6
+    np.testing.assert_allclose(fig.data[0].x, ntwk1.f / 1e6)
+    np.testing.assert_allclose([fig.layout.shapes[0].x0, fig.layout.shapes[0].x1], ntwk1.f[[0, 40]] / 1e6)
+    assert fig.layout.xaxis.range == (2 * scale, 4 * scale) and fig.layout.xaxis.title.text == "Frequency (MHz)"
+    np.testing.assert_allclose(ntwk1.plot_s_db(1, 0, ax=fig, backend="plotly").data[-1].x, ntwk1.f / 1e6)
+    with pytest.raises(ValueError, match="invalid funit"):
+        rf.plotting.scale_frequency_ticks(fig, "furlongs", backend="plotly")
+    with pytest.raises(ValueError, match="no frequency axis"):
+        rf.plotting.scale_frequency_ticks(rf.plotting.plot_complex_rectangular(ntwk1.s[:, 0, 0], backend="plotly"),
+                                          "MHz", backend="plotly")
+
+@needs_plotly
+def test_label_x_axis(ntwk1: rf.Network, mpl_axes):
+    other = mpl_axes.figure.add_subplot(2, 1, 2)  # now the current axes, not the one passed in
+    ntwk1.frequency.labelXAxis(mpl_axes)
+    assert mpl_axes.get_xlabel() == f"Frequency ({ntwk1.frequency.unit})" and other.get_xlabel() == ""
+    fig = go.Figure()
+    assert ntwk1.frequency.labelXAxis(fig, backend="plotly") is fig
+    assert fig.layout.xaxis.title.text == f"Frequency ({ntwk1.frequency.unit})"
+    # the matplotlib plots of a Network keep labelling their own axes under a global plotly backend
+    rf.plotting.options.backend = "plotly"
+    ntwk1.frequency.plot(ntwk1.s_db[:, 0, 0], ax=other, backend="matplotlib")
+    assert other.get_xlabel() == f"Frequency ({ntwk1.frequency.unit})"
