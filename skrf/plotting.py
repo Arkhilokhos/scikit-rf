@@ -42,8 +42,9 @@ take a per-call ``backend=`` argument.
 
 With plotly they return a ``plotly.graph_objects.Figure``; pass it as ``ax``
 to add traces to it. An ``ax`` that does not belong to the backend raises a
-``TypeError``. Of the convenience functions below, only `subplot_params` and
-`signature` support plotly; the others always use matplotlib.
+``TypeError``. Of the convenience functions below, `subplot_params`,
+`shade_bands` and `signature` support plotly, as does `plot_vector`; the
+others always use matplotlib.
 
 Convenience plotting functions
 -------------------------------
@@ -1338,7 +1339,8 @@ def subplot_params(ntwk: Network, param: str = 's', proj: str = 'db',
 
 
 def shade_bands(edges: NumberLike, y_range: tuple | None = None,
-                cmap: str = 'prism', **kwargs):
+                cmap: str | None = None, *, ax: Axes | None = None,
+                backend: str | None = None, **kwargs):
     r"""
     Shades frequency bands.
 
@@ -1349,33 +1351,63 @@ def shade_bands(edges: NumberLike, y_range: tuple | None = None,
     Parameters
     ----------
     edges : array-like
-        x-values separating regions of a given shade
+        x-values separating regions of a given shade, in Hz for a plot vs frequency
     y_range : tuple or None, optional.
-        y-values to shade in. Default is None.
-    cmap : str, optional.
-        see matplotlib.cm  or matplotlib.colormaps for acceptable values.
-        Default is 'prism'.
+        y-values to shade in. Default is None, the whole height of the plot.
+    cmap : str or None, optional.
+        see matplotlib.cm  or matplotlib.colormaps for acceptable values,
+        or with plotly a plotly colorscale name.
+        Default is None: 'prism', or with plotly its qualitative colors.
+    ax : :class:`matplotlib.axes.Axes` or plotly Figure, optional
+        plot to shade, default the current matplotlib axes, or a new
+        plotly Figure with the plotly backend.
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.plotting.options.backend``.
     \*\*kwargs : key word arguments
-        passed to `matplotlib.fill_between`
+        passed to `matplotlib.fill_between` (or the plotly Figure's ``add_shape``)
+
+    Returns
+    -------
+    None, or the plotly Figure with the plotly backend
 
     Examples
     --------
     >>> rf.shade_bands([325,500,750,1100], alpha=.2)
     """
-    import matplotlib
-    import matplotlib.pyplot as plt
+    if _resolve_backend(backend, ax) == 'plotly':
+        from plotly.colors import qualitative, sample_colorscale
 
-    cmap = matplotlib.colormaps[cmap]
+        from .frequency import Frequency
+
+        ax = _plotly_figure(ax)
+        if cmap is None:
+            colors = qualitative.Plotly * len(edges)
+        else:
+            colors = sample_colorscale(cmap, [k / len(edges) for k in range(len(edges) - 1)])
+        # edges in Hz, as the x data of matplotlib plots vs frequency, drawn in the unit of the figure
+        unit = (ax.layout.meta if isinstance(ax.layout.meta, dict) else {}).get('skrf_frequency_unit')
+        scale = Frequency.multiplier_dict[unit.lower()] if unit else 1
+        kwargs.setdefault('opacity', kwargs.pop('alpha', None))
+        y = dict(y0=y_range[0], y1=y_range[1], yref='y') if y_range is not None else dict(y0=0, y1=1, yref='y domain')
+        for k in range(len(edges) - 1):
+            ax.add_shape(type='rect', x0=edges[k] / scale, x1=edges[k + 1] / scale, xref='x', **y,
+                         fillcolor=colors[k], line_width=0, layer='below', **kwargs)
+        return ax
+
+    import matplotlib
+
+    ax = _get_axes(ax)
+    cmap = matplotlib.colormaps['prism' if cmap is None else cmap]
     if not isinstance(y_range, tuple | list) or (len(y_range) != 2):
-        y_range=plt.gca().get_ylim()
-    axis = plt.axis()
+        y_range=ax.get_ylim()
+    axis = ax.axis()
     for k in range(len(edges)-1):
-        plt.fill_between(
+        ax.fill_between(
             [edges[k],edges[k+1]],
             y_range[0], y_range[1],
             color = cmap(1.0*k/len(edges)),
             **kwargs)
-    plt.axis(axis)
+    ax.axis(axis)
 
 
 def save_all_figs(dir: str = './', format: None | list[str] = None,
@@ -1530,25 +1562,40 @@ def func_on_all_figs(func: Callable, *args, **kwargs):
 foaf = func_on_all_figs
 
 
-def plot_vector(a: complex, off: complex = 0+0j, **kwargs):
+def plot_vector(a: complex, off: complex = 0+0j, *, ax: Axes | None = None,
+                backend: str | None = None, **kwargs):
     """
     Plot a 2d vector.
 
     Parameters
     ----------
     a : complex
-        complex coordinates (real for X, imag for Y) of the arrow location.
+        the vector (real for X, imag for Y), drawn as an arrow from `off`.
     off : complex, optional
-        complex direction (real for U, imag for V) components
-        of the arrow vectors, by default 0+0j
+        start of the arrow, by default 0+0j
+    ax : :class:`matplotlib.axes.Axes` or plotly Figure, optional
+        plot to draw on, default the current matplotlib axes, or a new
+        plotly Figure with the plotly backend.
+    backend : {'matplotlib', 'plotly'}, optional
+        plotting backend, default ``skrf.plotting.options.backend``.
+    **kwargs :
+        passed to :func:`matplotlib.pyplot.quiver`, or with plotly to the Figure's
+        ``add_annotation``, where `color` sets the color of the arrow.
 
     Returns
     -------
-    quiver : matplotlib.pyplot.quiver
+    quiver : matplotlib.pyplot.quiver, or the plotly Figure with the plotly backend
     """
-    import matplotlib.pyplot as plt
+    if _resolve_backend(backend, ax) == 'plotly':
+        ax = _plotly_figure(ax)
+        if 'color' in kwargs:
+            kwargs['arrowcolor'] = _plotly_color(kwargs.pop('color'))
+        end = off + a
+        ax.add_annotation(x=end.real, y=end.imag, ax=off.real, ay=off.imag, xref='x', yref='y', axref='x',
+                          ayref='y', text='', showarrow=True, **{'arrowhead': 2, 'arrowwidth': 2, **kwargs})
+        return ax
 
-    return plt.quiver(off.real, off.imag, a.real, a.imag, scale_units='xy',
+    return _get_axes(ax).quiver(off.real, off.imag, a.real, a.imag, scale_units='xy',
            angles='xy', scale=1, **kwargs)
 
 

@@ -239,7 +239,8 @@ def test_plotly_does_not_import_matplotlib():
         "ns.plot_violin('s_db'); ns.plot_uncertainty_decomposition(); s = n.s[:, 0, 0]; "
         "rf.plotting.plot_rectangular(n.f, n.s_db[:, 0, 0]); rf.plotting.plot_complex_rectangular(s); "
         "rf.plotting.plot_complex_polar(s); rf.plotting.plot_smith(s); rf.plotting.subplot_params(n); "
-        "rf.media.Freespace(n.frequency).plot_ep_mu(); ns.signature(); ns.animate('s_db')")
+        "rf.media.Freespace(n.frequency).plot_ep_mu(); ns.signature(); ns.animate('s_db'); "
+        "rf.plotting.shade_bands([1e9, 2e9], ax=n.plot_s_db()); rf.plotting.plot_vector(1j)")
     assert "plotly" in loaded
     assert "matplotlib" not in loaded
 
@@ -462,6 +463,40 @@ def test_shade_bands(ntwk1: rf.Network, mpl_axes):
     ntwk1.plot_s_db(0, 0, ax=mpl_axes)
     rf.plotting.shade_bands(ntwk1.f[[0, 40, 80]], alpha=0.2)
     assert len(mpl_axes.collections) == 2
+    other = mpl_axes.figure.add_subplot(2, 1, 2)  # now the current axes, not the one passed in
+    rf.plotting.shade_bands(ntwk1.f[[0, 40, 80]], ax=mpl_axes)
+    assert len(mpl_axes.collections) == 4 and len(other.collections) == 0
+
+def test_plot_vector(mpl_axes):
+    quiver = rf.plotting.plot_vector(1 + 2j, 0.5j, ax=mpl_axes, color="r")
+    assert quiver in mpl_axes.collections
+    np.testing.assert_allclose([quiver.U[0], quiver.V[0]], [1, 2])
+
+@needs_plotly
+def test_plotly_shade_bands(ntwk1: rf.Network):
+    fig = ntwk1.plot_s_db(0, 0, backend="plotly")
+    edges = ntwk1.f[[0, 40, 80]]
+    assert rf.plotting.shade_bands(edges, alpha=0.2, ax=fig, backend="plotly") is fig
+    bands = fig.layout.shapes
+    assert len(bands) == 2 and len({b.fillcolor for b in bands}) == 2
+    # edges in Hz drawn in the unit of the figure, behind the data and over its whole height
+    np.testing.assert_allclose([b.x0 for b in bands] + [bands[-1].x1], edges / ntwk1.frequency.multiplier)
+    assert {(b.layer, b.opacity, b.yref, b.y0, b.y1) for b in bands} == {("below", 0.2, "y domain", 0, 1)}
+    rf.plotting.shade_bands(edges, y_range=(-10, 0), cmap="Viridis", ax=fig, backend="plotly")
+    assert (fig.layout.shapes[-1].yref, fig.layout.shapes[-1].y0, fig.layout.shapes[-1].y1) == ("y", -10, 0)
+    with pytest.raises(TypeError, match="cannot be used with backend='matplotlib'"):
+        rf.plotting.shade_bands(edges, ax=fig)
+
+@needs_plotly
+def test_plotly_plot_vector(ntwk1: rf.Network):
+    fig = ntwk1.plot_s_smith(0, 0, backend="plotly")
+    assert rf.plotting.plot_vector(1 + 2j, 0.5j, color="r", ax=fig, backend="plotly") is fig
+    (arrow,) = fig.layout.annotations[-1:]
+    # from off to off + a, like quiver
+    assert (arrow.ax, arrow.ay, arrow.x, arrow.y) == (0, 0.5, 1, 2.5)
+    assert (arrow.axref, arrow.ayref, arrow.showarrow, arrow.arrowcolor) == ("x", "y", True, "red")
+    rf.plotting.options.backend = "plotly"
+    assert isinstance(rf.plotting.plot_vector(1j), go.Figure)
 
 @needs_plotly
 def test_plotly_plot_contour(monkeypatch):
